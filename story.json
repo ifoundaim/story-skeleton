@@ -31,6 +31,12 @@
     },
     "lie_down": {
       "text": "You lie down in the meadow and fall into a deep, restful sleep. The End."
+    },
+    "lie_down": {
+      "text": "You lie down in the meadow and fall into a deep, restful sleep. The End."
+    },
+    "secret_cave": {
+      "text": "You discover a hidden cave glittering with ancient crystals. The air hums with power!"
     }
   }
   

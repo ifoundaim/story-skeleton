@@ -1,4 +1,11 @@
 {
-  "courage": 0,
-  "visited": []
+  "courage": 2,
+  "visited": [
+    "start",
+    "dark_forest",
+    "investigate_noise",
+    "sunny_meadow",
+    "lie_down",
+    "secret_cave"
+  ]
 }
