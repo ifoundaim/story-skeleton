@@ -7,10 +7,30 @@
       }
     },
     "dark_forest": {
-      "text": "You walk into the dark forest and feel the trees close around you..."
+      "text": "You walk into the dark forest and feel the trees close around you. You hear a strange noise.",
+      "choices": {
+        "1": "investigate_noise",
+        "2": "run_away"
+      }
     },
     "sunny_meadow": {
-      "text": "You head into the sunny meadow, the warm sun on your skin..."
+      "text": "You head into the sunny meadow, the warm sun on your skin. You see a river sparkling in the distance.",
+      "choices": {
+        "1": "go_to_river",
+        "2": "lie_down"
+      }
+    },
+    "investigate_noise": {
+      "text": "You move toward the noise and discover a hidden treasure chest! The End."
+    },
+    "run_away": {
+      "text": "You run away safely but always wonder what you missed. The End."
+    },
+    "go_to_river": {
+      "text": "You sit by the river and find peace in the sound of water. The End."
+    },
+    "lie_down": {
+      "text": "You lie down in the meadow and fall into a deep, restful sleep. The End."
     }
   }
   
