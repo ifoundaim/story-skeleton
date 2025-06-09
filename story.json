@@ -1,0 +1,16 @@
+{
+    "start": {
+      "text": "You are standing at a crossroad. Where do you want to go?",
+      "choices": {
+        "1": "dark_forest",
+        "2": "sunny_meadow"
+      }
+    },
+    "dark_forest": {
+      "text": "You walk into the dark forest and feel the trees close around you..."
+    },
+    "sunny_meadow": {
+      "text": "You head into the sunny meadow, the warm sun on your skin..."
+    }
+  }
+  

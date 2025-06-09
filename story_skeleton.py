@@ -1,17 +1,29 @@
-def main():
-    print("Welcome to the Story Skeleton!")
-    print("You are standing at a crossroad. Where do you want to go?")
-    print("1. Left towards the dark forest")
-    print("2. Right towards the sunny meadow")
+import json
 
-    choice = input("Enter 1 or 2: ")
+def load_story(filename):
+    with open(filename, 'r') as f:
+        return json.load(f)
 
-    if choice == "1":
-        print("You walk into the dark forest and feel the trees close around you...")
-    elif choice == "2":
-        print("You head into the sunny meadow, the warm sun on your skin...")
+def play_scene(story, current_scene):
+    scene = story[current_scene]
+    print(scene["text"])
+
+    if "choices" in scene:
+        for key, next_scene in scene["choices"].items():
+            print(f"{key}. {next_scene.replace('_', ' ').title()}")
+
+        choice = input("Enter your choice: ")
+        if choice in scene["choices"]:
+            play_scene(story, scene["choices"][choice])
+        else:
+            print("Invalid choice. Try again.")
+            play_scene(story, current_scene)
     else:
-        print("That's not a valid choice.")
+        print("The End.")
+
+def main():
+    story = load_story("story.json")
+    play_scene(story, "start")
 
 if __name__ == "__main__":
     main()
