@@ -55,6 +55,7 @@ export default function SceneView() {
   return (
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
       <motion.div
+        key={scene.sceneTag}
         className={`${bgClass} p-3 rounded`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1, backgroundColor: bgColor }}
