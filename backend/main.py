@@ -1,94 +1,80 @@
-```python
-# main.py
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, constr
+from pathlib import Path
+import hashlib
 import json
-from typing import Dict, Any
-from trust import TrustManager
+import re
+import shutil
 
-app = FastAPI()
+app = FastAPI(title="SoulSeed API")
+app.mount("/static", StaticFiles(directory="."), name="static")
 
-# Load player profiles
-def load_player_profiles() -> Dict[str, Any]:
-    with open('player_profile.json', 'r') as f:
-        return json.load(f)
+DATA_FILE = Path(__file__).resolve().parent / "player_profile.json"
 
-# Save player profiles
-def save_player_profiles(data: Dict[str, Any]) -> None:
-    with open('player_profile.json', 'w') as f:
-        json.dump(data, f, indent=4)
+
+def load_profiles() -> dict:
+    if DATA_FILE.exists():
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f) or {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_profiles(data: dict) -> None:
+    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    slug = re.sub(r"-+", "-", slug)
+    return slug
+
 
 class SoulSeedRequest(BaseModel):
-    avatarArchetype: str
+    playerName: constr(min_length=1)
+    archetype: constr(min_length=1)
+
 
 class SoulSeedResponse(BaseModel):
+    playerId: str
     soulSeedId: str
-    initialSceneTag: str
+    initSceneTag: str
+
 
 @app.post("/soulseed", response_model=SoulSeedResponse)
-async def create_soul_seed(request: SoulSeedRequest):
-    player_profiles = load_player_profiles()
-    
-    # Generate soul seed ID and initial scene tag based on avatar archetype
-    soul_seed_id = f"seed-{request.avatarArchetype}-{len(player_profiles) + 1}"
-    initial_scene_tag = f"scene-{request.avatarArchetype}"
+def create_soulseed(request: SoulSeedRequest) -> SoulSeedResponse:
+    player_id = slugify(request.playerName)
+    seed_source = f"{request.playerName}|{request.archetype}"
+    soul_seed_id = hashlib.sha256(seed_source.encode()).hexdigest()[:12]
 
-    # Persist soul seed in player profile
-    player_profiles[soul_seed_id] = {
-        "avatarArchetype": request.avatarArchetype,
-        "initialSceneTag": initial_scene_tag
+    profiles = load_profiles()
+    profiles[player_id] = {
+        "playerName": request.playerName,
+        "archetype": request.archetype,
+        "soulSeedId": soul_seed_id,
     }
-    save_player_profiles(player_profiles)
+    save_profiles(profiles)
 
-    return SoulSeedResponse(soulSeedId=soul_seed_id, initialSceneTag=initial_scene_tag)
+    return SoulSeedResponse(
+        playerId=player_id,
+        soulSeedId=soul_seed_id,
+        initSceneTag="intro_001",
+    )
 
-# Trust Manager integration
-trust_manager = TrustManager()
 
-@app.post("/play_scene")
-async def play_scene(scene_id: str, player_id: str, score: int):
-    # Update trust score
-    trust_manager.update(player_id, score)
-    return {"message": "Scene played successfully."}
-```
-
-```python
-# trust.py
-import json
-from typing import Dict
-
-class TrustManager:
-    def __init__(self, filename: str = 'trust_data.json'):
-        self.filename = filename
-        self.trust_data = self.load()
-
-    def load(self) -> Dict[str, int]:
-        try:
-            with open(self.filename, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {}
-
-    def save(self) -> None:
-        with open(self.filename, 'w') as f:
-            json.dump(self.trust_data, f, indent=4)
-
-    def update(self, player_id: str, score: int) -> None:
-        if player_id in self.trust_data:
-            self.trust_data[player_id] += score
-        else:
-            self.trust_data[player_id] = score
-        self.save()
-```
-
-```json
-// player_profile.json
-{}
-```
-
-```json
-// trust_data.json
-{}
-```
-
-Make sure to create the `player_profile.json` and `trust_data.json` files in the same directory as your FastAPI application to avoid file not found errors.
+@app.post("/avatar/upload", tags=["avatar_upload"])
+def avatar_upload(playerId: str, file: UploadFile = File(...)):
+    if file.content_type not in ("image/png", "image/jpeg"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    ext = ".png" if file.content_type == "image/png" else ".jpg"
+    base = Path("uploads") / playerId
+    base.mkdir(parents=True, exist_ok=True)
+    dest = base / f"orig_001{ext}"
+    with dest.open("wb") as fh:
+        shutil.copyfileobj(file.file, fh)
+    return {"url": f"/static/{dest.as_posix()}"}

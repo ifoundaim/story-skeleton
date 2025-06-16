@@ -7,15 +7,18 @@ profile.  The older health-check route remains for backwards
 compatibility so existing tests continue to pass.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, constr
 from pathlib import Path
 import hashlib
 import json
 import re
+import shutil
 
 #: minimal FastAPI app the tests look for
 app = FastAPI(title="SoulSeed API stub")
+app.mount("/static", StaticFiles(directory="."), name="static")
 
 
 @app.get("/soulseed", tags=["health"])
@@ -62,6 +65,19 @@ class SoulSeedResponse(BaseModel):
     playerId: str
     soulSeedId: str
     initSceneTag: str
+
+
+@app.post("/avatar/upload", tags=["avatar_upload"])
+def avatar_upload(playerId: str, file: UploadFile = File(...)):
+    if file.content_type not in ("image/png", "image/jpeg"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    ext = ".png" if file.content_type == "image/png" else ".jpg"
+    base = Path("uploads") / playerId
+    base.mkdir(parents=True, exist_ok=True)
+    dest = base / f"orig_001{ext}"
+    with dest.open("wb") as fh:
+        shutil.copyfileobj(file.file, fh)
+    return {"url": f"/static/{dest.as_posix()}"}
 
 
 @app.post("/soulseed", response_model=SoulSeedResponse)
