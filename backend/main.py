@@ -10,6 +10,8 @@ app = FastAPI(title="SoulSeed API")
 
 DATA_FILE = Path(__file__).resolve().parent / "player_profile.json"
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
+STORY_FILE = Path(__file__).resolve().parent / "story.json"
+STATE_FILE = Path(__file__).resolve().parent / "player_state.json"
 
 app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
@@ -27,6 +29,22 @@ def load_profiles() -> dict:
 def save_profiles(data: dict) -> None:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_json(path: Path, fallback: dict) -> dict:
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f) or fallback
+        except json.JSONDecodeError:
+            return fallback
+    return fallback
+
+
+def save_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
 
@@ -51,6 +69,22 @@ class SoulSeedResponse(BaseModel):
     playerId: str
     soulSeedId: str
     initSceneTag: str
+
+
+class StartRequest(BaseModel):
+    soulSeedId: str
+
+
+class ChoiceRequest(BaseModel):
+    soulSeedId: str
+    sceneTag: str
+    choiceTag: str
+
+
+class SceneResponse(BaseModel):
+    sceneTag: str
+    text: str
+    choices: list
 
 
 @app.post("/avatar/upload")
@@ -86,4 +120,34 @@ def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
         soulSeedId=soul_seed_id,
         initSceneTag="intro_001",
     )
+
+
+def _scene_to_response(tag: str, story: dict) -> SceneResponse:
+    scene = story[tag]
+    choices = [
+        {"tag": k, "label": v.replace("_", " ").title()}
+        for k, v in scene.get("choices", {}).items()
+    ]
+    return SceneResponse(sceneTag=tag, text=scene["text"], choices=choices)
+
+
+@app.post("/start", response_model=SceneResponse)
+def start_story(req: StartRequest) -> SceneResponse:
+    story = load_json(STORY_FILE, {})
+    return _scene_to_response("intro_001", story)
+
+
+@app.post("/choice", response_model=SceneResponse)
+def make_choice(req: ChoiceRequest) -> SceneResponse:
+    story = load_json(STORY_FILE, {})
+    state = load_json(STATE_FILE, {"soulMap": {}})
+
+    current = story[req.sceneTag]
+    next_tag = current["choices"][req.choiceTag]
+
+    soul_map = state.setdefault("soulMap", {})
+    soul_map.setdefault(req.soulSeedId, []).append(next_tag)
+    save_json(STATE_FILE, state)
+
+    return _scene_to_response(next_tag, story)
 
