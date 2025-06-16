@@ -7,7 +7,8 @@ profile.  The older health-check route remains for backwards
 compatibility so existing tests continue to pass.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, constr
 from pathlib import Path
 import hashlib
@@ -16,6 +17,9 @@ import re
 
 #: minimal FastAPI app the tests look for
 app = FastAPI(title="SoulSeed API stub")
+
+UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads"
+app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
 
 @app.get("/soulseed", tags=["health"])
@@ -63,6 +67,20 @@ class SoulSeedResponse(BaseModel):
     playerId: str
     soulSeedId: str
     initSceneTag: str
+
+
+@app.post("/avatar/upload")
+async def upload_avatar(playerId: str = Form(...), file: UploadFile = File(...)) -> dict:
+    """Save uploaded file and return static URL."""
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename).suffix
+    dest_dir = UPLOADS_DIR / playerId
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"orig_001{ext}"
+    content = await file.read()
+    dest.write_bytes(content)
+    url = f"/static/{playerId}/{dest.name}"
+    return {"url": url}
 
 
 def make_soulSeedId(playerName: str, archetype: str) -> str:
