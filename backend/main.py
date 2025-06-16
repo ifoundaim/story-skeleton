@@ -1,124 +1,94 @@
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+```python
+# main.py
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import json, os
-from pathlib import Path
-from dotenv import load_dotenv
-from openai import OpenAI
-import random
+import json
+from typing import Dict, Any
+from trust import TrustManager
 
-# Load environment variables
-load_dotenv() 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Initialize FastAPI app
 app = FastAPI()
 
-# Allow CORS (frontend to backend communication)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# File paths
-STORY_FILE = "story.json"
-STATE_FILE = "player_state.json"
-PROFILE_FILE = "player_profile.json"
-MAX_SCENES_PER_RUN = 10
-
-# Request models
-class ChoiceInput(BaseModel):
-    choice: str
-
-class AvatarInput(BaseModel):
-    name: str
-    archetype: str
-
-class RitualProgressInput(BaseModel):
-    step: str
-
-# Utility functions
-def load_json(filepath, default):
-    if not Path(filepath).exists():
-        return default
-    with open(filepath, "r") as f:
+# Load player profiles
+def load_player_profiles() -> Dict[str, Any]:
+    with open('player_profile.json', 'r') as f:
         return json.load(f)
 
-def save_json(filepath, data):
-    with open(filepath, "w") as f:
-        json.dump(data, f, indent=2)
+# Save player profiles
+def save_player_profiles(data: Dict[str, Any]) -> None:
+    with open('player_profile.json', 'w') as f:
+        json.dump(data, f, indent=4)
 
-# Sprint 1+2 Story Engine (Existing engine)
+class SoulSeedRequest(BaseModel):
+    avatarArchetype: str
 
-def generate_scene_with_ai():
-    return "You stand before an unknown path, waiting for your choice."
+class SoulSeedResponse(BaseModel):
+    soulSeedId: str
+    initialSceneTag: str
 
-def propose_choice_scene():
-    return {"1": "dark_forest", "2": "sunny_meadow"}
-
-def play_scene(tag, story, player):
-    if tag not in story:
-        text = generate_scene_with_ai()
-        choices = propose_choice_scene()
-        story[tag] = {"text": text, "choices": choices}
-        save_json(STORY_FILE, story)
-    else:
-        text = story[tag]["text"]
-        choices = story[tag].get("choices", {})
+@app.post("/soulseed", response_model=SoulSeedResponse)
+async def create_soul_seed(request: SoulSeedRequest):
+    player_profiles = load_player_profiles()
     
-    player["visited"].append(tag)
-    save_json(STATE_FILE, player)
-    return {"text": text, "choices": choices}
+    # Generate soul seed ID and initial scene tag based on avatar archetype
+    soul_seed_id = f"seed-{request.avatarArchetype}-{len(player_profiles) + 1}"
+    initial_scene_tag = f"scene-{request.avatarArchetype}"
 
-@app.get("/start")
-async def start():
-    story = load_json(STORY_FILE, {})
-    player = {"courage": 0, "visited": []}
-    save_json(STATE_FILE, player)
-    return play_scene("start", story, player)
-
-@app.post("/choice")
-async def make_choice(data: ChoiceInput):
-    story = load_json(STORY_FILE, {})
-    player = load_json(STATE_FILE, {"courage": 0, "visited": []})
-    last_scene = player["visited"][-1] if player["visited"] else "start"
-    next_tag = story[last_scene].get("choices", {}).get(data.choice)
-    if not next_tag:
-        return {"error": "Invalid choice."}
-    return play_scene(next_tag, story, player)
-
-# Sprint 3: Liminal Initiation Layer
-
-@app.get("/liminal")
-async def liminal():
-    return {
-        "steps": ["ASK", "SEEK", "KNOCK"],
-        "message": "You stand before the stone doorway. What is your intention?"
+    # Persist soul seed in player profile
+    player_profiles[soul_seed_id] = {
+        "avatarArchetype": request.avatarArchetype,
+        "initialSceneTag": initial_scene_tag
     }
+    save_player_profiles(player_profiles)
 
-@app.post("/liminal")
-async def liminal_progress(data: RitualProgressInput):
-    step = data.step.upper()
-    valid_steps = ["ASK", "SEEK", "KNOCK"]
-    if step not in valid_steps:
-        return {"error": "Invalid ritual step."}
-    if step == "KNOCK":
-        return {"message": "The doorway opens.", "advance": True}
-    else:
-        return {"message": f"You have invoked '{step}'. Continue.", "advance": False}
+    return SoulSeedResponse(soulSeedId=soul_seed_id, initialSceneTag=initial_scene_tag)
 
-# Sprint 4: Avatar Creation Layer
+# Trust Manager integration
+trust_manager = TrustManager()
 
-@app.post("/avatar")
-async def avatar_creation(data: AvatarInput):
-    profile = {
-        "playerName": data.name,
-        "avatarArchetype": data.archetype,
-        "initialSoulCodeSeed": "Pending",
-        "avatarAppearanceSeed": "Kai Base"
-    }
-    save_json(PROFILE_FILE, profile)
-    return {"message": "Avatar created successfully.", "profile": profile}
+@app.post("/play_scene")
+async def play_scene(scene_id: str, player_id: str, score: int):
+    # Update trust score
+    trust_manager.update(player_id, score)
+    return {"message": "Scene played successfully."}
+```
+
+```python
+# trust.py
+import json
+from typing import Dict
+
+class TrustManager:
+    def __init__(self, filename: str = 'trust_data.json'):
+        self.filename = filename
+        self.trust_data = self.load()
+
+    def load(self) -> Dict[str, int]:
+        try:
+            with open(self.filename, 'r') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+
+    def save(self) -> None:
+        with open(self.filename, 'w') as f:
+            json.dump(self.trust_data, f, indent=4)
+
+    def update(self, player_id: str, score: int) -> None:
+        if player_id in self.trust_data:
+            self.trust_data[player_id] += score
+        else:
+            self.trust_data[player_id] = score
+        self.save()
+```
+
+```json
+// player_profile.json
+{}
+```
+
+```json
+// trust_data.json
+{}
+```
+
+Make sure to create the `player_profile.json` and `trust_data.json` files in the same directory as your FastAPI application to avoid file not found errors.
