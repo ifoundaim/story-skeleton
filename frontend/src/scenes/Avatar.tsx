@@ -5,13 +5,29 @@ export default function Avatar() {
   const [name, setName] = useState('');
   const [archetype, setArchetype] = useState('');
   const [profile, setProfile] = useState<Record<string, string> | null>(null);
+  const [uploadUrl, setUploadUrl] = useState('');
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await axios.post(`/avatar/upload?playerId=${encodeURIComponent(name || 'tmp')}`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    setUploadUrl(res.data.url);
+  };
 
   const handleAvatarCreation = async () => {
     if (!name || !archetype) {
       alert('Enter name and select archetype');
       return;
     }
-    const res = await axios.post('/avatar', { name, archetype });
+    const res = await axios.post('/avatar', {
+      name,
+      archetype,
+      avatarReferenceUrl: uploadUrl,
+    });
     setProfile(res.data.profile);
   };
 
@@ -34,6 +50,15 @@ export default function Avatar() {
         <option value="Healer Path">Healer Path</option>
         <option value="Guide Path">Guide Path</option>
       </select>
+      <br />
+      <br />
+      <input type="file" accept="image/*" onChange={handleFileChange} />
+      {uploadUrl && (
+        <div>
+          <br />
+          <img src={uploadUrl} alt="avatar" style={{ maxWidth: 150 }} />
+        </div>
+      )}
       <br />
       <br />
       <button onClick={handleAvatarCreation} style={{ padding: '8px 16px' }}>
