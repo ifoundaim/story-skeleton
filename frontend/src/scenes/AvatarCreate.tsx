@@ -5,20 +5,38 @@ export default function AvatarCreate() {
   const [name, setName] = useState('');
   const [preset, setPreset] = useState('');
   const [customText, setCustomText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState('');
   const [profile, setProfile] = useState<Record<string, string> | null>(null);
+
+  const slugify = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .replace(/-+/g, '-');
 
   const handleAvatarCreation = async () => {
     if (!name || !preset) {
       alert('Enter name and select archetype');
       return;
     }
+    let avatarUrl: string | null = null;
+    if (file) {
+      const fd = new FormData();
+      fd.append('playerId', slugify(name));
+      fd.append('file', file);
+      const up = await axios.post('/avatar/upload', fd);
+      avatarUrl = up.data.url;
+    }
     const body = {
       playerName: name,
       archetypePreset: preset,
       archetypeCustom: customText || null,
+      avatarReferenceUrl: avatarUrl,
     };
-    const res = await axios.post('/avatar', body);
-    setProfile(res.data.profile);
+    const res = await axios.post('/soulseed', body);
+    setProfile(res.data);
   };
 
   return (
@@ -56,6 +74,21 @@ export default function AvatarCreate() {
           style={{ width: '100%', padding: 6 }}
         />
       </label>
+      <br />
+      <br />
+      <input
+        type="file"
+        onChange={(e) => {
+          const f = e.target.files?.[0] || null;
+          setFile(f);
+          setPreview(f ? URL.createObjectURL(f) : '');
+        }}
+      />
+      {preview && (
+        <div>
+          <img src={preview} alt="preview" style={{ maxWidth: 80 }} />
+        </div>
+      )}
       <br />
       <br />
       <button onClick={handleAvatarCreation} style={{ padding: '8px 16px' }}>

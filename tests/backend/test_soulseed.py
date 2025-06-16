@@ -71,3 +71,28 @@ def test_custom_text_affects_id():
     r2 = client.post("/soulseed", json=payload)
     assert r2.status_code == 200
     assert r2.json()["soulSeedId"] != id1
+
+
+def test_custom_text_determinism():
+    client = TestClient(import_app())
+    payload = {
+        "playerName": "Carol",
+        "archetypePreset": "ranger",
+        "archetypeCustom": "wanderer",
+    }
+    r1 = client.post("/soulseed", json=payload)
+    r2 = client.post("/soulseed", json=payload)
+    assert r1.status_code == r2.status_code == 200
+    assert r1.json()["soulSeedId"] == r2.json()["soulSeedId"]
+
+
+def test_avatar_upload(tmp_path):
+    client = TestClient(import_app())
+    files = {"file": ("avatar.png", b"fakeimage", "image/png")}
+    data = {"playerId": "carol"}
+    resp = client.post("/avatar/upload", data=data, files=files)
+    assert resp.status_code == 200
+    url = resp.json()["url"]
+    assert url.startswith("/static/carol/orig_001")
+    saved = Path(url.replace("/static", str((Path(__file__).resolve().parents[2] / "uploads"))))
+    assert saved.read_bytes() == b"fakeimage"
