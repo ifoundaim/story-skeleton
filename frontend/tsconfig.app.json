@@ -23,5 +23,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["frontend/src"]
+  "types": ["jest", "node"],
+  "include": ["src"]
 }
