@@ -22,7 +22,10 @@ def setup_function(_):
 def test_create_soulseed():
     client = TestClient(import_app())
 
-    payload = {"playerName": "Alice Smith", "archetype": "wizard"}
+    payload = {
+        "playerName": "Alice Smith",
+        "archetypePreset": "wizard",
+    }
     resp = client.post("/soulseed", json=payload)
     assert resp.status_code == 200
     data = resp.json()
@@ -41,5 +44,30 @@ def test_create_soulseed():
 
 def test_validation_error():
     client = TestClient(import_app())
-    resp = client.post("/soulseed", json={"playerName": "", "archetype": "mage"})
+    resp = client.post(
+        "/soulseed",
+        json={"playerName": "", "archetypePreset": "mage"},
+    )
     assert resp.status_code == 422
+
+
+def test_custom_text_affects_id():
+    client = TestClient(import_app())
+
+    payload = {
+        "playerName": "Bob",
+        "archetypePreset": "mage",
+        "archetypeCustom": "the great",
+    }
+    r1 = client.post("/soulseed", json=payload)
+    assert r1.status_code == 200
+    id1 = r1.json()["soulSeedId"]
+
+    r1b = client.post("/soulseed", json=payload)
+    assert r1b.status_code == 200
+    assert r1b.json()["soulSeedId"] == id1
+
+    payload["archetypeCustom"] = "something else"
+    r2 = client.post("/soulseed", json=payload)
+    assert r2.status_code == 200
+    assert r2.json()["soulSeedId"] != id1

@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Liminal from './scenes/Liminal';
-import Avatar from './scenes/Avatar';
+import AvatarCreate from './scenes/AvatarCreate';
 
 export default function App() {
   return (
@@ -8,7 +8,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/liminal" replace />} />
         <Route path="/liminal" element={<Liminal />} />
-        <Route path="/avatar" element={<Avatar />} />
+        <Route path="/avatar" element={<AvatarCreate />} />
       </Routes>
     </BrowserRouter>
   );

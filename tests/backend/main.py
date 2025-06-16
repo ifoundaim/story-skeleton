@@ -53,9 +53,10 @@ def slugify(value: str) -> str:
     return slug
 
 
-class SoulSeedRequest(BaseModel):
-    playerName: constr(min_length=1)
-    archetype: constr(min_length=1)
+class PlayerProfileIn(BaseModel):
+    playerName: constr(strip_whitespace=True, min_length=1)
+    archetypePreset: str
+    archetypeCustom: str | None = None
 
 
 class SoulSeedResponse(BaseModel):
@@ -64,16 +65,21 @@ class SoulSeedResponse(BaseModel):
     initSceneTag: str
 
 
+def make_soulSeedId(playerName: str, archetype: str) -> str:
+    seed_source = f"{playerName}|{archetype}"
+    return hashlib.sha256(seed_source.encode()).hexdigest()[:12]
+
+
 @app.post("/soulseed", response_model=SoulSeedResponse)
-def create_soulseed(request: SoulSeedRequest) -> SoulSeedResponse:
+def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
     player_id = slugify(request.playerName)
-    seed_source = f"{request.playerName}|{request.archetype}"
-    soul_seed_id = hashlib.sha256(seed_source.encode()).hexdigest()[:12]
+    archetype = request.archetypeCustom or request.archetypePreset
+    soul_seed_id = make_soulSeedId(request.playerName, archetype)
 
     profiles = load_profiles()
     profiles[player_id] = {
         "playerName": request.playerName,
-        "archetype": request.archetype,
+        "archetype": archetype,
         "soulSeedId": soul_seed_id,
     }
     save_profiles(profiles)

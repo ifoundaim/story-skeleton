@@ -1,17 +1,23 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-export default function Avatar() {
+export default function AvatarCreate() {
   const [name, setName] = useState('');
-  const [archetype, setArchetype] = useState('');
+  const [preset, setPreset] = useState('');
+  const [customText, setCustomText] = useState('');
   const [profile, setProfile] = useState<Record<string, string> | null>(null);
 
   const handleAvatarCreation = async () => {
-    if (!name || !archetype) {
+    if (!name || !preset) {
       alert('Enter name and select archetype');
       return;
     }
-    const res = await axios.post('/avatar', { name, archetype });
+    const body = {
+      playerName: name,
+      archetypePreset: preset,
+      archetypeCustom: customText || null,
+    };
+    const res = await axios.post('/avatar', body);
     setProfile(res.data.profile);
   };
 
@@ -26,7 +32,11 @@ export default function Avatar() {
       />
       <br />
       <br />
-      <select value={archetype} onChange={(e) => setArchetype(e.target.value)} style={{ padding: 6, width: '100%' }}>
+      <select
+        value={preset}
+        onChange={(e) => setPreset(e.target.value)}
+        style={{ padding: 6, width: '100%' }}
+      >
         <option value="">Select Archetype</option>
         <option value="Visionary Dreamer">Visionary Dreamer</option>
         <option value="Sacred Union">Sacred Union</option>
@@ -34,6 +44,18 @@ export default function Avatar() {
         <option value="Healer Path">Healer Path</option>
         <option value="Guide Path">Guide Path</option>
       </select>
+      <br />
+      <br />
+      <label>
+        Describe your own archetype (optional)
+        <br />
+        <textarea
+          rows={3}
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          style={{ width: '100%', padding: 6 }}
+        />
+      </label>
       <br />
       <br />
       <button onClick={handleAvatarCreation} style={{ padding: '8px 16px' }}>
