@@ -151,3 +151,10 @@ def make_choice(req: ChoiceRequest) -> SceneResponse:
 
     return _scene_to_response(next_tag, story)
 
+
+@app.get("/trust")
+def get_trust(soulSeedId: str) -> dict:
+    state = load_json(STATE_FILE, {"trust": {}})
+    trust_map = state.get("trust", {})
+    return {"trust": float(trust_map.get(soulSeedId, 0))}
+
