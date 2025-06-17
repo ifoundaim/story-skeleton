@@ -22,12 +22,15 @@ export default function SceneView() {
   const [trust, setTrust] = useState<number | null>(null);
   const [error, setError] = useState<string>('');
 
-  // Generic fetch helper
-  const fetchJson = useCallback(async (url: string, opts?: RequestInit) => {
-    const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    return res.json();
-  }, []);
+  // Generic JSON fetch helper
+  const fetchJson = useCallback(
+    async (url: string, opts?: RequestInit) => {
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    },
+    []
+  );
 
   // Load initial scene & trust
   useEffect(() => {
@@ -43,7 +46,10 @@ export default function SceneView() {
           body: JSON.stringify({ soulSeedId }),
         });
         setScene(sceneData);
-        const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
+
+        const trustData = await fetchJson(
+          `/trust?soulSeedId=${soulSeedId}`
+        );
         setTrust(trustData.trust);
       } catch (err: any) {
         console.error(err);
@@ -61,7 +67,10 @@ export default function SceneView() {
         body: JSON.stringify({ soulSeedId, tag: choiceTag }),
       });
       setScene(next);
-      const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
+
+      const trustData = await fetchJson(
+        `/trust?soulSeedId=${soulSeedId}`
+      );
       setTrust(trustData.trust);
       setError('');
     } catch (err) {
@@ -74,7 +83,7 @@ export default function SceneView() {
   const restart = async () => {
     await fetchJson('/reset', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ soulSeedId }),
     });
     localStorage.removeItem('soulSeedId');
@@ -82,6 +91,7 @@ export default function SceneView() {
     navigate('/avatar', { replace: true });
   };
 
+  // Error view
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-4">
@@ -96,6 +106,7 @@ export default function SceneView() {
     );
   }
 
+  // Loading view
   if (!scene) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -104,6 +115,7 @@ export default function SceneView() {
     );
   }
 
+  // Main UI
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -125,11 +137,7 @@ export default function SceneView() {
       {trust !== null && (
         <div className="flex items-center justify-center space-x-2">
           <span className="font-medium">Trust:</span>
-          <progress
-            value={trust}
-            max={10}
-            className="w-48 h-2 rounded"
-          />
+          <progress value={trust} max={10} className="w-48 h-2 rounded" />
           <span>{trust.toFixed(1)}</span>
         </div>
       )}
