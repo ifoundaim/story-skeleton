@@ -7,6 +7,7 @@ interface Choice {
   tag: string;
   label: string;
 }
+
 interface Scene {
   sceneTag: string;
   text: string;
@@ -15,7 +16,7 @@ interface Scene {
 
 export default function SceneView() {
   const navigate = useNavigate();
-  const soulSeedId = localStorage.getItem('soulSeedId')!;
+  const soulSeedId = localStorage.getItem('soulSeedId');
   const avatarUrl = localStorage.getItem('avatarUrl') || '';
 
   const [scene, setScene] = useState<Scene | null>(null);
@@ -23,21 +24,28 @@ export default function SceneView() {
   const [error, setError] = useState<string>('');
 
   // Generic JSON fetch
-  const fetchJson = useCallback(
-    async (url: string, opts?: RequestInit) => {
-      const res = await fetch(url, opts);
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      return res.json();
-    },
-    []
-  );
+  const fetchJson = useCallback(async (url: string, opts?: RequestInit) => {
+    const res = await fetch(url, opts);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
+  }, []);
 
-  // Load intro scene + initial trust
+  const fetchTrust = useCallback(async () => {
+    try {
+      const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
+      setTrust(typeof trustData.trust === 'number' ? trustData.trust : 0);
+    } catch (err) {
+      console.error('Failed to fetch trust', err);
+      setTrust(0);
+    }
+  }, [fetchJson, soulSeedId]);
+
   useEffect(() => {
     if (!soulSeedId) {
       navigate('/avatar', { replace: true });
       return;
     }
+
     (async () => {
       try {
         const sceneData: Scene = await fetchJson('/start', {
@@ -46,37 +54,31 @@ export default function SceneView() {
           body: JSON.stringify({ soulSeedId }),
         });
         setScene(sceneData);
-
-        const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
-        setTrust(trustData.trust);
+        await fetchTrust();
       } catch (err) {
-        console.error(err);
+        console.error('Failed to fetch start scene', err);
         setError('Could not load the story. Try reload.');
       }
     })();
-  }, [soulSeedId, navigate, fetchJson]);
+  }, [soulSeedId, navigate, fetchJson, fetchTrust]);
 
-  // Advance the story on choice
   const choose = async (choiceTag: string) => {
+    if (!scene) return;
     try {
-      const next: Scene = await fetchJson('/choose', {
+      const nextScene: Scene = await fetchJson('/choose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ soulSeedId, tag: choiceTag }),
       });
-      setScene(next);
-
-      const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
-      setTrust(trustData.trust);
-
+      setScene(nextScene);
+      await fetchTrust();
       setError('');
     } catch (err) {
-      console.error(err);
+      console.error('Failed to submit choice', err);
       setError('Could not advance the story. Try again?');
     }
   };
 
-  // Restart from scratch
   const restart = async () => {
     await fetchJson('/reset', {
       method: 'POST',
@@ -88,7 +90,6 @@ export default function SceneView() {
     navigate('/avatar', { replace: true });
   };
 
-  // Error state
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-4">
@@ -103,7 +104,6 @@ export default function SceneView() {
     );
   }
 
-  // Loading state
   if (!scene) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -112,7 +112,6 @@ export default function SceneView() {
     );
   }
 
-  // Main UI
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -121,7 +120,6 @@ export default function SceneView() {
       transition={{ duration: 0.4 }}
       className="max-w-2xl mx-auto p-6 space-y-6"
     >
-      {/* Avatar */}
       {avatarUrl && (
         <img
           src={avatarUrl}
@@ -130,7 +128,6 @@ export default function SceneView() {
         />
       )}
 
-      {/* Trust Meter */}
       {trust !== null && (
         <div className="flex items-center justify-center space-x-2">
           <span className="font-medium">Trust:</span>
@@ -139,10 +136,8 @@ export default function SceneView() {
         </div>
       )}
 
-      {/* Scene Text */}
       <p className="text-lg">{scene.text}</p>
 
-      {/* Choices or End */}
       {scene.choices.length > 0 ? (
         <div className="space-y-4">
           {scene.choices.map((c) => (
@@ -159,7 +154,6 @@ export default function SceneView() {
         <p className="italic">The End.</p>
       )}
 
-      {/* Restart Button */}
       <div className="flex justify-center">
         <button
           onClick={restart}
