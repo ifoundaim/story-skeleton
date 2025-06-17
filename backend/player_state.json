@@ -1,11 +1,13 @@
 {
-  "courage": 2,
-  "visited": [
-    "start",
-    "dark_forest",
-    "investigate_noise",
-    "sunny_meadow",
-    "lie_down",
-    "secret_cave"
-  ]
+  "soulMap": {
+    "721e3ae27fc8": [
+      "intro_001"
+    ],
+    "ce2dd7686773": [
+      "intro_001"
+    ],
+    "e9102dc81782": [
+      "intro_001"
+    ]
+  }
 }

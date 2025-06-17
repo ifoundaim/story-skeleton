@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel, constr
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
@@ -13,7 +13,11 @@ UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
 STORY_FILE = Path(__file__).resolve().parent / "story.json"
 STATE_FILE = Path(__file__).resolve().parent / "player_state.json"
 
-app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=UPLOADS_DIR, check_dir=False),
+    name="static",
+)
 
 
 def load_profiles() -> dict:
@@ -50,8 +54,7 @@ def save_json(path: Path, data: dict) -> None:
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    slug = re.sub(r"-+", "-", slug)
-    return slug
+    return re.sub(r"-+", "-", slug)
 
 
 def make_soulSeedId(playerName: str, archetype: str) -> str:
@@ -77,8 +80,7 @@ class StartRequest(BaseModel):
 
 class ChoiceRequest(BaseModel):
     soulSeedId: str
-    sceneTag: str
-    choiceTag: str
+    tag: str
 
 
 class SceneResponse(BaseModel):
@@ -88,8 +90,9 @@ class SceneResponse(BaseModel):
 
 
 @app.post("/avatar/upload")
-async def upload_avatar(playerId: str = Form(...), file: UploadFile = File(...)) -> dict:
-    """Save uploaded file under uploads/{playerId}/orig_001.<ext> and return its static URL."""
+async def upload_avatar(
+    playerId: str = Form(...), file: UploadFile = File(...)
+) -> dict:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     ext = Path(file.filename).suffix
     dest_dir = UPLOADS_DIR / playerId
@@ -97,8 +100,7 @@ async def upload_avatar(playerId: str = Form(...), file: UploadFile = File(...))
     dest = dest_dir / f"orig_001{ext}"
     content = await file.read()
     dest.write_bytes(content)
-    url = f"/static/{playerId}/{dest.name}"
-    return {"url": url}
+    return {"url": f"/static/{playerId}/{dest.name}"}
 
 
 @app.post("/soulseed", response_model=SoulSeedResponse)
@@ -116,9 +118,7 @@ def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
     save_profiles(profiles)
 
     return SoulSeedResponse(
-        playerId=player_id,
-        soulSeedId=soul_seed_id,
-        initSceneTag="intro_001",
+        playerId=player_id, soulSeedId=soul_seed_id, initSceneTag="intro_001"
     )
 
 
@@ -134,19 +134,33 @@ def _scene_to_response(tag: str, story: dict) -> SceneResponse:
 @app.post("/start", response_model=SceneResponse)
 def start_story(req: StartRequest) -> SceneResponse:
     story = load_json(STORY_FILE, {})
-    return _scene_to_response("intro_001", story)
+    initial_tag = "intro_001"
+
+    state = load_json(STATE_FILE, {"soulMap": {}})
+    soul_map = state.setdefault("soulMap", {})
+    soul_map[req.soulSeedId] = [initial_tag]
+    save_json(STATE_FILE, state)
+
+    return _scene_to_response(initial_tag, story)
 
 
-@app.post("/choice", response_model=SceneResponse)
-def make_choice(req: ChoiceRequest) -> SceneResponse:
+@app.post("/choose", response_model=SceneResponse)
+def choose(req: ChoiceRequest) -> SceneResponse:
     story = load_json(STORY_FILE, {})
     state = load_json(STATE_FILE, {"soulMap": {}})
-
-    current = story[req.sceneTag]
-    next_tag = current["choices"][req.choiceTag]
-
     soul_map = state.setdefault("soulMap", {})
-    soul_map.setdefault(req.soulSeedId, []).append(next_tag)
+
+    history = soul_map.get(req.soulSeedId)
+    if not history:
+        raise HTTPException(400, "No story in progress")
+
+    current_tag = history[-1]
+    current = story.get(current_tag)
+    if current is None or req.tag not in current.get("choices", {}):
+        raise HTTPException(400, "Invalid choice")
+
+    next_tag = current["choices"][req.tag]
+    history.append(next_tag)
     save_json(STATE_FILE, state)
 
     return _scene_to_response(next_tag, story)
@@ -155,6 +169,14 @@ def make_choice(req: ChoiceRequest) -> SceneResponse:
 @app.get("/trust")
 def get_trust(soulSeedId: str) -> dict:
     state = load_json(STATE_FILE, {"trust": {}})
-    trust_map = state.get("trust", {})
-    return {"trust": float(trust_map.get(soulSeedId, 0))}
+    return {"trust": float(state.get("trust", {}).get(soulSeedId, 0))}
 
+
+@app.post("/reset")
+def reset_story(soulSeedId: str = Form(...)) -> dict:
+    state = load_json(STATE_FILE, {"soulMap": {}})
+    soul_map = state.get("soulMap", {})
+    if soulSeedId in soul_map:
+        del soul_map[soulSeedId]
+        save_json(STATE_FILE, state)
+    return {"reset": True}
