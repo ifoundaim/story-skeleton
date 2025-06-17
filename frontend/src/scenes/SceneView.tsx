@@ -22,7 +22,7 @@ export default function SceneView() {
   const [trust, setTrust] = useState<number | null>(null);
   const [error, setError] = useState<string>('');
 
-  // Generic JSON fetch helper
+  // Generic JSON fetch
   const fetchJson = useCallback(
     async (url: string, opts?: RequestInit) => {
       const res = await fetch(url, opts);
@@ -32,7 +32,7 @@ export default function SceneView() {
     []
   );
 
-  // Load initial scene & trust
+  // Load intro scene + initial trust
   useEffect(() => {
     if (!soulSeedId) {
       navigate('/avatar', { replace: true });
@@ -47,18 +47,16 @@ export default function SceneView() {
         });
         setScene(sceneData);
 
-        const trustData = await fetchJson(
-          `/trust?soulSeedId=${soulSeedId}`
-        );
+        const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
         setTrust(trustData.trust);
-      } catch (err: any) {
+      } catch (err) {
         console.error(err);
-        setError('Could not load the story. Try Reload.');
+        setError('Could not load the story. Try reload.');
       }
     })();
   }, [soulSeedId, navigate, fetchJson]);
 
-  // Handle choice click
+  // Advance the story on choice
   const choose = async (choiceTag: string) => {
     try {
       const next: Scene = await fetchJson('/choose', {
@@ -68,10 +66,9 @@ export default function SceneView() {
       });
       setScene(next);
 
-      const trustData = await fetchJson(
-        `/trust?soulSeedId=${soulSeedId}`
-      );
+      const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
       setTrust(trustData.trust);
+
       setError('');
     } catch (err) {
       console.error(err);
@@ -79,7 +76,7 @@ export default function SceneView() {
     }
   };
 
-  // Restart handler
+  // Restart from scratch
   const restart = async () => {
     await fetchJson('/reset', {
       method: 'POST',
@@ -91,7 +88,7 @@ export default function SceneView() {
     navigate('/avatar', { replace: true });
   };
 
-  // Error view
+  // Error state
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-4">
@@ -106,7 +103,7 @@ export default function SceneView() {
     );
   }
 
-  // Loading view
+  // Loading state
   if (!scene) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -145,7 +142,7 @@ export default function SceneView() {
       {/* Scene Text */}
       <p className="text-lg">{scene.text}</p>
 
-      {/* Choices */}
+      {/* Choices or End */}
       {scene.choices.length > 0 ? (
         <div className="space-y-4">
           {scene.choices.map((c) => (
@@ -162,7 +159,7 @@ export default function SceneView() {
         <p className="italic">The End.</p>
       )}
 
-      {/* Restart */}
+      {/* Restart Button */}
       <div className="flex justify-center">
         <button
           onClick={restart}

@@ -1,4 +1,9 @@
+<<<<<<< HEAD
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+=======
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
+>>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
 from pydantic import BaseModel, constr
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +17,7 @@ DATA_FILE = Path(__file__).resolve().parent / "player_profile.json"
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
 STORY_FILE = Path(__file__).resolve().parent / "story.json"
 STATE_FILE = Path(__file__).resolve().parent / "player_state.json"
+EDITOR_FILE = Path(__file__).resolve().parent / "editor.html"
 
 app.mount(
     "/static",
@@ -172,6 +178,7 @@ def get_trust(soulSeedId: str) -> dict:
     return {"trust": float(state.get("trust", {}).get(soulSeedId, 0))}
 
 
+<<<<<<< HEAD
 @app.post("/reset")
 def reset_story(soulSeedId: str = Form(...)) -> dict:
     state = load_json(STATE_FILE, {"soulMap": {}})
@@ -180,3 +187,12 @@ def reset_story(soulSeedId: str = Form(...)) -> dict:
         del soul_map[soulSeedId]
         save_json(STATE_FILE, state)
     return {"reset": True}
+=======
+@app.get("/editor", response_class=HTMLResponse)
+def story_editor() -> HTMLResponse:
+    """Serve a basic HTML page for editing the story JSON."""
+    if EDITOR_FILE.exists():
+        return HTMLResponse(EDITOR_FILE.read_text())
+    return HTMLResponse("<html><body><h1>Story Editor</h1></body></html>")
+
+>>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7

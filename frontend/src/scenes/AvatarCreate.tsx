@@ -1,6 +1,10 @@
 // frontend/src/scenes/AvatarCreate.tsx
 import { useState } from 'react';
+<<<<<<< HEAD
 import { useNavigate } from 'react-router-dom';
+=======
+import { useAvatar } from '../AvatarContext';
+>>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
 import axios from 'axios';
 
 export default function AvatarCreate() {
@@ -9,8 +13,13 @@ export default function AvatarCreate() {
   const [customText, setCustomText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
+<<<<<<< HEAD
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+=======
+  const [profile, setProfile] = useState<Record<string, string> | null>(null);
+  const { setAvatarUrl } = useAvatar();
+>>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
 
   const slugify = (value: string) =>
     value
@@ -57,6 +66,22 @@ export default function AvatarCreate() {
       console.error(e);
       setError('Failed to create avatar. Please try again.');
     }
+<<<<<<< HEAD
+=======
+    const body = {
+      playerName: name,
+      archetypePreset: preset,
+      archetypeCustom: customText || null,
+      avatarReferenceUrl: avatarUrl,
+    };
+    const res = await axios.post('/soulseed', body);
+    setProfile(res.data);
+    const returnedUrl = (res.data && res.data.avatarReferenceUrl) || avatarUrl;
+    if (returnedUrl) {
+      localStorage.setItem('avatarUrl', returnedUrl);
+      setAvatarUrl(returnedUrl);
+    }
+>>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
   };
 
   return (
