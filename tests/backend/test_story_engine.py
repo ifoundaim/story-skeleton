@@ -35,9 +35,9 @@ def test_start_and_choice():
     )
     assert r2.status_code == 200
     next_data = r2.json()
-    assert next_data["sceneTag"] == "dark_forest"
-    assert "dark forest" in next_data["text"].lower()
+    assert next_data["sceneTag"] == "mysterious_cave"
+    assert "mysterious cave" in next_data["text"].lower()
 
     state = json.loads(STATE_FILE.read_text())
-    assert state["soulMap"]["abc"] == ["dark_forest"]
+    assert state["soulMap"]["abc"] == ["mysterious_cave"]
 
