@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAvatar } from '../AvatarContext';
 import axios from 'axios';
 
 export default function AvatarCreate() {
@@ -8,6 +9,7 @@ export default function AvatarCreate() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [profile, setProfile] = useState<Record<string, string> | null>(null);
+  const { setAvatarUrl } = useAvatar();
 
   const slugify = (value: string) =>
     value
@@ -37,6 +39,11 @@ export default function AvatarCreate() {
     };
     const res = await axios.post('/soulseed', body);
     setProfile(res.data);
+    const returnedUrl = (res.data && res.data.avatarReferenceUrl) || avatarUrl;
+    if (returnedUrl) {
+      localStorage.setItem('avatarUrl', returnedUrl);
+      setAvatarUrl(returnedUrl);
+    }
   };
 
   return (
