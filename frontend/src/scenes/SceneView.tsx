@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAvatar } from '../AvatarContext';
 import { motion } from 'framer-motion';
 
 type Choice = { tag: string; label: string };
@@ -8,6 +9,7 @@ export default function SceneView() {
   const [scene, setScene] = useState<Scene | null>(null);
   const [trust, setTrust] = useState(0);
   const soulSeedId = 'demo';
+  const { avatarUrl } = useAvatar();
 
   const fetchTrust = () => {
     fetch(`/trust?soulSeedId=${soulSeedId}`)
@@ -54,6 +56,11 @@ export default function SceneView() {
 
   return (
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
+      {avatarUrl && (
+        <div style={{ marginBottom: 8 }}>
+          <img src={avatarUrl} alt="Your avatar" style={{ maxWidth: 100, borderRadius: '50%' }} />
+        </div>
+      )}
       <motion.div
         key={scene.sceneTag}
         className={`${bgClass} p-3 rounded`}
