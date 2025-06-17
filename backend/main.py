@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, constr
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +13,7 @@ DATA_FILE = Path(__file__).resolve().parent / "player_profile.json"
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
 STORY_FILE = Path(__file__).resolve().parent / "story.json"
 STATE_FILE = Path(__file__).resolve().parent / "player_state.json"
+EDITOR_FILE = Path(__file__).resolve().parent / "editor.html"
 
 app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
@@ -157,4 +159,12 @@ def get_trust(soulSeedId: str) -> dict:
     state = load_json(STATE_FILE, {"trust": {}})
     trust_map = state.get("trust", {})
     return {"trust": float(trust_map.get(soulSeedId, 0))}
+
+
+@app.get("/editor", response_class=HTMLResponse)
+def story_editor() -> HTMLResponse:
+    """Serve a basic HTML page for editing the story JSON."""
+    if EDITOR_FILE.exists():
+        return HTMLResponse(EDITOR_FILE.read_text())
+    return HTMLResponse("<html><body><h1>Story Editor</h1></body></html>")
 
