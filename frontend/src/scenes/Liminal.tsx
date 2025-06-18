@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import axios from 'axios';
-import './Liminal.css';
 
 const phases = ['ASK', 'SEEK', 'KNOCK'] as const;
 
@@ -24,11 +24,19 @@ export default function Liminal() {
   const phase: Phase = phases[index];
 
   return (
-    <div className="liminal" onClick={handleClick} data-phase={phase}>
-      <svg width="200" height="300" viewBox="0 0 200 300" className="door">
+    <motion.div
+      className="flex flex-col items-center justify-center w-screen h-screen bg-gray-100 cursor-pointer"
+      onClick={handleClick}
+      data-phase={phase}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <svg width="200" height="300" viewBox="0 0 200 300">
         <rect x="10" y="10" width="180" height="280" rx="20" fill="#ccc" stroke="#888" strokeWidth="4" />
       </svg>
-      <div className="word">{phase}</div>
-    </div>
+      <div className="mt-4 text-2xl font-medium">{phase}</div>
+    </motion.div>
   );
 }
