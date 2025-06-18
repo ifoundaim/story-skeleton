@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import SceneView from '../SceneView';
 
 describe('SceneView', () => {
@@ -15,7 +16,11 @@ describe('SceneView', () => {
     (global as any).fetch = fetchMock;
 
     const user = userEvent.setup();
-    render(<SceneView />);
+    render(
+      <MemoryRouter>
+        <SceneView />
+      </MemoryRouter>
+    );
 
     expect(await screen.findByText('Start here')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Go' }));
@@ -31,7 +36,11 @@ describe('SceneView', () => {
       .mockResolvedValueOnce({ json: () => Promise.resolve({ trust: -5 }) } as any);
     (global as any).fetch = fetchMock;
 
-    render(<SceneView />);
+    render(
+      <MemoryRouter>
+        <SceneView />
+      </MemoryRouter>
+    );
 
     const card = await screen.findByText('Start here');
     expect(card).toHaveClass('bg-forest');

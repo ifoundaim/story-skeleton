@@ -1,3 +1,4 @@
+// frontend/src/scenes/SceneView.tsx
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -6,7 +7,6 @@ interface Choice {
   tag: string;
   label: string;
 }
-
 interface Scene {
   sceneTag: string;
   text: string;
@@ -15,77 +15,104 @@ interface Scene {
 
 export default function SceneView() {
   const navigate = useNavigate();
-  const soulSeedId = localStorage.getItem('soulSeedId')!;
-  const avatarUrl = localStorage.getItem('avatarUrl') || '';
 
-  const [scene, setScene] = useState<Scene | null>(null);
-  const [trust, setTrust] = useState<number | null>(null);
-  const [error, setError] = useState<string>('');
+  /* ------------------------------------------------------------------ */
+  /*  persistent data                                                   */
+  /* ------------------------------------------------------------------ */
+  const soulSeedId = localStorage.getItem('soulSeedId') || '';
+  const avatarUrl  = localStorage.getItem('avatarUrl')   || '';
 
+  /* ------------------------------------------------------------------ */
+  /*  local state                                                       */
+  /* ------------------------------------------------------------------ */
+  const [scene,  setScene]  = useState<Scene | null>(null);
+  const [trust,  setTrust]  = useState<number | null>(null);
+  const [error,  setError]  = useState<string>('');
+
+  /* ------------------------------------------------------------------ */
+  /*  small helper to fetch JSON and reject on non-OK                   */
+  /* ------------------------------------------------------------------ */
   const fetchJson = useCallback(async (url: string, opts?: RequestInit) => {
     const res = await fetch(url, opts);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
   }, []);
 
-  const fetchTrust = async () => {
+  /* ------------------------------------------------------------------ */
+  /*  trust helper                                                      */
+  /* ------------------------------------------------------------------ */
+  const refreshTrust = useCallback(async () => {
     try {
-      const trustData = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
-      setTrust(typeof trustData.trust === 'number' ? trustData.trust : 0);
-    } catch (err) {
-      console.error('Failed to fetch trust', err);
+      const data = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
+      setTrust(typeof data.trust === 'number' ? data.trust : 0);
+    } catch (e) {
+      console.error('Failed to fetch trust', e);
     }
-  };
+  }, [fetchJson, soulSeedId]);
 
+  /* ------------------------------------------------------------------ */
+  /*  on mount – route-guard + load intro scene                         */
+  /* ------------------------------------------------------------------ */
   useEffect(() => {
     if (!soulSeedId) {
       navigate('/avatar', { replace: true });
       return;
     }
+
     (async () => {
       try {
-        const sceneData: Scene = await fetchJson('/start', {
+        const data: Scene = await fetchJson('/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ soulSeedId }),
         });
-        setScene(sceneData);
-        await fetchTrust();
-      } catch (err) {
-        console.error(err);
-        setError('Could not load the story. Try Reload.');
+        setScene(data);
+        await refreshTrust();
+      } catch (e) {
+        console.error(e);
+        setError('Could not load the story. Try reload.');
       }
     })();
-  }, [soulSeedId, navigate, fetchJson]);
+  }, [soulSeedId, fetchJson, refreshTrust, navigate]);
 
-  const choose = async (choiceTag: string) => {
+  /* ------------------------------------------------------------------ */
+  /*  choose handler                                                    */
+  /* ------------------------------------------------------------------ */
+  const handleChoice = async (choiceTag: string) => {
     if (!scene) return;
     try {
-      const next: Scene = await fetchJson('/choose', {
+      const data: Scene = await fetchJson('/choose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ soulSeedId, tag: choiceTag }),
       });
-      setScene(next);
-      await fetchTrust();
+      setScene(data);
+      await refreshTrust();
       setError('');
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
       setError('Could not advance the story. Try again?');
     }
   };
 
-  const restart = async () => {
-    await fetchJson('/reset', {
+  /* ------------------------------------------------------------------ */
+  /*  restart handler                                                   */
+  /* ------------------------------------------------------------------ */
+  const handleRestart = async () => {
+    await fetch('/reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ soulSeedId }),
-    });
+    }).catch(() => {});   // swallow errors – it’s just a reset
+
     localStorage.removeItem('soulSeedId');
     localStorage.removeItem('avatarUrl');
     navigate('/avatar', { replace: true });
   };
 
+  /* ------------------------------------------------------------------ */
+  /*  render helpers                                                    */
+  /* ------------------------------------------------------------------ */
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-4">
@@ -108,6 +135,9 @@ export default function SceneView() {
     );
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  main UI                                                           */
+  /* ------------------------------------------------------------------ */
   return (
     <motion.div
       key={scene.sceneTag}
@@ -115,8 +145,9 @@ export default function SceneView() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.4 }}
-      className="max-w-2xl mx-auto flex flex-col items-center justify-center min-h-screen p-6"
+      className="max-w-2xl mx-auto flex flex-col items-center justify-center min-h-screen p-6 space-y-6"
     >
+      {/* avatar */}
       {avatarUrl && (
         <img
           src={avatarUrl}
@@ -125,6 +156,7 @@ export default function SceneView() {
         />
       )}
 
+      {/* trust meter */}
       {trust !== null && (
         <div className="flex items-center justify-center space-x-2">
           <span className="font-medium">Trust:</span>
@@ -133,14 +165,16 @@ export default function SceneView() {
         </div>
       )}
 
-      <p className="text-lg my-6">{scene.text}</p>
+      {/* scene text */}
+      <p className="text-lg text-center">{scene.text}</p>
 
+      {/* choices / end */}
       {scene.choices.length > 0 ? (
         <div className="space-y-4 w-full">
           {scene.choices.map((c) => (
             <button
               key={c.tag}
-              onClick={() => choose(c.tag)}
+              onClick={() => handleChoice(c.tag)}
               className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700"
             >
               {c.label}
@@ -151,8 +185,9 @@ export default function SceneView() {
         <p className="italic">The End.</p>
       )}
 
+      {/* restart */}
       <button
-        onClick={restart}
+        onClick={handleRestart}
         className="mt-6 px-5 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
       >
         Restart
