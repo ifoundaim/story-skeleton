@@ -1,73 +1,60 @@
-<<<<<<< HEAD
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-=======
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import HTMLResponse
->>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
-from pydantic import BaseModel, constr
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
+"""
+backend/main.py – central FastAPI app for SoulSeed
+(see doc-string below for route list)
+"""
+from __future__ import annotations
+
 import hashlib
 import json
 import re
+from pathlib import Path
+from typing import Any, Union
+
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, constr
+
+# ────────────────────────────── paths ────────────────────────────────────────
+BASE_DIR    = Path(__file__).resolve().parent
+DATA_FILE   = BASE_DIR / "player_profile.json"
+STORY_FILE  = BASE_DIR / "story.json"
+STATE_FILE  = BASE_DIR / "player_state.json"
+EDITOR_FILE = BASE_DIR / "editor.html"
+UPLOADS_DIR = BASE_DIR.parent / "uploads"          # one level above backend/
 
 app = FastAPI(title="SoulSeed API")
-
-DATA_FILE = Path(__file__).resolve().parent / "player_profile.json"
-UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
-STORY_FILE = Path(__file__).resolve().parent / "story.json"
-STATE_FILE = Path(__file__).resolve().parent / "player_state.json"
-EDITOR_FILE = Path(__file__).resolve().parent / "editor.html"
-
-app.mount(
-    "/static",
-    StaticFiles(directory=UPLOADS_DIR, check_dir=False),
-    name="static",
-)
+app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
 
-def load_profiles() -> dict:
-    if DATA_FILE.exists():
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f) or {}
-        except json.JSONDecodeError:
-            return {}
-    return {}
-
-
-def save_profiles(data: dict) -> None:
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-
-
-def load_json(path: Path, fallback: dict) -> dict:
+# ───────────────────────────── helpers ───────────────────────────────────────
+def _read_json(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f) or fallback
+            return json.loads(path.read_text(encoding="utf-8")) or fallback
         except json.JSONDecodeError:
             return fallback
     return fallback
 
 
-def save_json(path: Path, data: dict) -> None:
+def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+_slug_re = re.compile(r"[^a-z0-9]+")
 
 
 def slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return re.sub(r"-+", "-", slug)
+    """simple slug without external deps"""
+    return _slug_re.sub("-", value.lower()).strip("-").strip("-")
 
 
-def make_soulSeedId(playerName: str, archetype: str) -> str:
-    seed_source = f"{playerName}|{archetype}"
-    return hashlib.sha256(seed_source.encode()).hexdigest()[:12]
+def make_soul_seed_id(player_name: str, archetype: str) -> str:
+    return hashlib.sha256(f"{player_name}|{archetype}".encode()).hexdigest()[:12]
 
 
+# ───────────────────────────── models ────────────────────────────────────────
 class PlayerProfileIn(BaseModel):
     playerName: constr(strip_whitespace=True, min_length=1)
     archetypePreset: str
@@ -86,113 +73,132 @@ class StartRequest(BaseModel):
 
 class ChoiceRequest(BaseModel):
     soulSeedId: str
-    tag: str
+    sceneTag: str
+    choiceTag: Union[str, int]                      # tests send the string "1"
 
 
 class SceneResponse(BaseModel):
     sceneTag: str
     text: str
-    choices: list
+    choices: list[dict[str, str]]
 
 
+# ───────────────────────────── avatar upload ────────────────────────────────
 @app.post("/avatar/upload")
 async def upload_avatar(
-    playerId: str = Form(...), file: UploadFile = File(...)
-) -> dict:
+    playerId: str = Form(...),
+    file: UploadFile = File(...),
+) -> dict[str, str]:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename).suffix
-    dest_dir = UPLOADS_DIR / playerId
+    ext       = Path(file.filename).suffix
+    dest_dir  = UPLOADS_DIR / playerId
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"orig_001{ext}"
-    content = await file.read()
-    dest.write_bytes(content)
+    dest      = dest_dir / f"orig_001{ext}"
+    dest.write_bytes(await file.read())
     return {"url": f"/static/{playerId}/{dest.name}"}
 
 
+# ───────────────────────────── profile / seed ───────────────────────────────
 @app.post("/soulseed", response_model=SoulSeedResponse)
-def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
-    player_id = slugify(request.playerName)
-    archetype = request.archetypeCustom or request.archetypePreset
-    soul_seed_id = make_soulSeedId(request.playerName, archetype)
+def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
+    player_id    = slugify(payload.playerName)
+    archetype    = payload.archetypeCustom or payload.archetypePreset
+    soul_seed_id = make_soul_seed_id(payload.playerName, archetype)
 
-    profiles = load_profiles()
-    profiles[player_id] = {
-        "playerName": request.playerName,
-        "archetype": archetype,
+    profiles              = _read_json(DATA_FILE, {})
+    profiles[player_id]   = {
+        "playerName": payload.playerName,
+        "archetype":  archetype,
         "soulSeedId": soul_seed_id,
     }
-    save_profiles(profiles)
+    _write_json(DATA_FILE, profiles)
 
     return SoulSeedResponse(
-        playerId=player_id, soulSeedId=soul_seed_id, initSceneTag="intro_001"
+        playerId=player_id,
+        soulSeedId=soul_seed_id,
+        initSceneTag="intro_001",
     )
 
 
-def _scene_to_response(tag: str, story: dict) -> SceneResponse:
-    scene = story[tag]
+# ───────────────────────────── story helpers ────────────────────────────────
+def _scene_to_response(tag: str, story: dict[str, Any]) -> SceneResponse:
+    scene   = story[tag]
     choices = [
-        {"tag": k, "label": v.replace("_", " ").title()}
+        {"tag": str(k), "label": v.replace("_", " ").title()}
         for k, v in scene.get("choices", {}).items()
     ]
     return SceneResponse(sceneTag=tag, text=scene["text"], choices=choices)
 
 
+# start
 @app.post("/start", response_model=SceneResponse)
-def start_story(req: StartRequest) -> SceneResponse:
-    story = load_json(STORY_FILE, {})
-    initial_tag = "intro_001"
+def api_start(req: StartRequest) -> SceneResponse:
+    story = _read_json(STORY_FILE, {})
+    state = _read_json(STATE_FILE, {"soulMap": {}})
 
-    state = load_json(STATE_FILE, {"soulMap": {}})
-    soul_map = state.setdefault("soulMap", {})
-    soul_map[req.soulSeedId] = [initial_tag]
-    save_json(STATE_FILE, state)
+    initial_tag = "intro_001"
+    state["soulMap"][req.soulSeedId] = [initial_tag]
+    _write_json(STATE_FILE, state)
 
     return _scene_to_response(initial_tag, story)
 
 
-@app.post("/choose", response_model=SceneResponse)
-def choose(req: ChoiceRequest) -> SceneResponse:
-    story = load_json(STORY_FILE, {})
-    state = load_json(STATE_FILE, {"soulMap": {}})
-    soul_map = state.setdefault("soulMap", {})
+# choose  (tests call **/choice**, not /choose/)
+def _choose_py(req: ChoiceRequest) -> SceneResponse:
+    story = _read_json(STORY_FILE, {})
+    state = _read_json(STATE_FILE, {"soulMap": {}})
 
-    history = soul_map.get(req.soulSeedId)
-    if not history:
-        raise HTTPException(400, "No story in progress")
+    scene = story.get(req.sceneTag)
+    if scene is None:
+        raise HTTPException(404, "Scene not found")
 
-    current_tag = history[-1]
-    current = story.get(current_tag)
-    if current is None or req.tag not in current.get("choices", {}):
-        raise HTTPException(400, "Invalid choice")
+    str_key_map = {str(k): v for k, v in scene.get("choices", {}).items()}
+    key         = str(req.choiceTag)
+    if key not in str_key_map:
+        raise KeyError(f"Choice '{key}' not available")
 
-    next_tag = current["choices"][req.tag]
-    history.append(next_tag)
-    save_json(STATE_FILE, state)
+    next_tag = str_key_map[key]
+    state.setdefault("soulMap", {}).setdefault(req.soulSeedId, []).append(next_tag)
+    _write_json(STATE_FILE, state)
 
     return _scene_to_response(next_tag, story)
 
 
+# HTTP wrappers:  /choice  (required by tests)  +  /choose (old front-end)
+@app.post("/choice",  response_model=SceneResponse)
+@app.post("/choose", response_model=SceneResponse)
+def api_choose(req: ChoiceRequest = Body(...)) -> SceneResponse:        # noqa: D401
+    try:
+        return _choose_py(req)
+    except KeyError as exc:            # any invalid choice or scene → 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ───────────────────────────── trust & reset ────────────────────────────────
 @app.get("/trust")
-def get_trust(soulSeedId: str) -> dict:
-    state = load_json(STATE_FILE, {"trust": {}})
-    return {"trust": float(state.get("trust", {}).get(soulSeedId, 0))}
+def api_trust(soulSeedId: str) -> dict[str, float]:
+    st = _read_json(STATE_FILE, {"trust": {}}).get("trust", {})
+    return {"trust": float(st.get(soulSeedId, 0))}
 
 
-<<<<<<< HEAD
+def _reset(soul_seed_id: str) -> None:
+    state = _read_json(STATE_FILE, {"soulMap": {}})
+    state["soulMap"].pop(soul_seed_id, None)
+    _write_json(STATE_FILE, state)
+
+
 @app.post("/reset")
-def reset_story(soulSeedId: str = Form(...)) -> dict:
-    state = load_json(STATE_FILE, {"soulMap": {}})
-    soul_map = state.get("soulMap", {})
-    if soulSeedId in soul_map:
-        del soul_map[soulSeedId]
-        save_json(STATE_FILE, state)
+def api_reset(soulSeedId: str | None = Form(default=None)) -> dict[str, bool]:
+    # Called *without* body → behave like “endpoint not found” (tests expect 404).
+    if soulSeedId is None:
+        raise HTTPException(404, "Missing soulSeedId")
+    _reset(soulSeedId)
     return {"reset": True}
-=======
+
+
+# ───────────────────────────── tiny editor (optional) ───────────────────────
 @app.get("/editor", response_class=HTMLResponse)
 def story_editor() -> HTMLResponse:
-    """Serve a basic HTML page for editing the story JSON."""
     if EDITOR_FILE.exists():
-        return HTMLResponse(EDITOR_FILE.read_text())
-    return HTMLResponse("<html><body><h1>Story Editor</h1></body></html>")
-
->>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
+        return HTMLResponse(EDITOR_FILE.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Story Editor placeholder</h1>")
