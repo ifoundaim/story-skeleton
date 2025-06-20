@@ -90,6 +90,9 @@ class ChoiceRequest(BaseModel):
         )
 
 
+ChoiceRequest.model_rebuild()
+
+
 class SceneResponse(BaseModel):
     sceneTag: str
     text: str
@@ -166,7 +169,7 @@ def _choose_py(req: ChoiceRequest) -> SceneResponse:
         raise KeyError(f"Choice '{key}' not available")
 
     next_tag = str_key_map[key]
-    state.setdefault("soulMap", {}).setdefault(req.soulSeedId, []).append(next_tag)
+    state.setdefault("soulMap", {})[req.soulSeedId] = [next_tag]
     _write_json(STATE_FILE, state)
 
     return _scene_to_response(next_tag, story)
