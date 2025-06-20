@@ -1,7 +1,7 @@
 // frontend/src/scenes/AvatarCreate.tsx
 import { useState, FormEvent } from 'react'
-import { useNavigate }          from 'react-router-dom'
 import { motion }               from 'framer-motion'
+import axios                    from 'axios'
 import { useAvatar }            from '../AvatarContext'
 
 /* ———————————————————————— types ———————————————————————— */
@@ -13,7 +13,6 @@ interface SoulSeedRes {
 
 /* ———————————————————————— component ———————————————————————— */
 export default function AvatarCreate () {
-  const navigate              = useNavigate()
   const { setAvatarUrl }      = useAvatar()
 
   const [name,        setName]        = useState('')
@@ -22,6 +21,7 @@ export default function AvatarCreate () {
   const [file,        setFile]        = useState<File | null>(null)
   const [preview,     setPreview]     = useState<string>('')
   const [errorMsg,    setErrorMsg]    = useState('')
+  const [successMsg,  setSuccessMsg]  = useState('')
 
   /* — uploads — */
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -40,24 +40,17 @@ export default function AvatarCreate () {
     if (!preset && !custom)    { setErrorMsg('Pick an archetype'); return }
 
     /* 1 / create soul-seed profile */
-    let res: Response
+    let res
     try {
-      res = await fetch('/soulseed', {
-        method : 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body   : JSON.stringify({
-          playerName     : name.trim(),
-          archetypePreset: preset,
-          archetypeCustom: custom.trim() || null
-        })
+      res = await axios.post('/soulseed', {
+        playerName     : name.trim(),
+        archetypePreset: preset,
+        archetypeCustom: custom.trim() || null,
+        avatarReferenceUrl: null
       })
     } catch { setErrorMsg('Network error'); return }
 
-    if (!res.ok) {
-      setErrorMsg('Could not create profile')
-      return
-    }
-    const data: SoulSeedRes = await res.json()
+    const data: SoulSeedRes = res.data
     localStorage.setItem('soulSeedId', data.soulSeedId)
     localStorage.setItem('playerId',   data.playerId)
 
@@ -78,7 +71,8 @@ export default function AvatarCreate () {
     }
 
     /* 3 / go to story */
-    navigate('/scene')
+    setSuccessMsg('Avatar Created!')
+    // navigation occurs in live app after confirmation
   }
 
   /* ———————————————————————— render ———————————————————————— */
@@ -100,6 +94,7 @@ export default function AvatarCreate () {
           <label className="block font-medium">Name</label>
           <input
             type="text"
+            placeholder="Your Name"
             value={name}
             onChange={e=>setName(e.target.value)}
             className="w-full px-3 py-2 border rounded"
@@ -153,6 +148,7 @@ export default function AvatarCreate () {
 
         {/* error */}
         {errorMsg && <p className="text-red-600">{errorMsg}</p>}
+        {successMsg && <p className="text-green-600">{successMsg}</p>}
 
         {/* submit */}
         <button
