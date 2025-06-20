@@ -7,7 +7,7 @@ profile.  The older health-check route remains for backwards
 compatibility so existing tests continue to pass.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, constr
 from pathlib import Path
@@ -54,6 +54,21 @@ def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     slug = re.sub(r"-+", "-", slug)
     return slug
+
+
+def make_soulSeedId(player_name: str, archetype: str) -> str:
+    """Deterministic short hash for tests."""
+    seed = f"{player_name}|{archetype}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:12]
+
+
+@app.post("/avatar/upload")
+async def avatar_upload(playerId: str = Form(...), file: UploadFile = File(...)) -> dict[str, str]:
+    dest_dir = Path("uploads") / playerId
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"orig_001{Path(file.filename).suffix}"
+    dest.write_bytes(await file.read())
+    return {"url": f"/static/{playerId}/{dest.name}"}
 
 
 class PlayerProfileIn(BaseModel):
