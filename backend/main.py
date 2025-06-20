@@ -15,6 +15,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict, constr
 
+from avatar import generate_avatar, AvatarSeed
+
 # ─────────────────────────────── paths ───────────────────────────────────────
 BASE_DIR    = Path(__file__).resolve().parent
 DATA_FILE   = BASE_DIR / "player_profile.json"
@@ -89,6 +91,8 @@ class ChoiceRequest(BaseModel):
             else (self.tag if self.tag is not None else self.choice)
         )
 
+ChoiceRequest.model_rebuild()
+
 
 ChoiceRequest.model_rebuild()
 
@@ -97,6 +101,16 @@ class SceneResponse(BaseModel):
     sceneTag: str
     text: str
     choices: list[dict[str, str]]
+
+
+class AvatarCreateRequest(BaseModel):
+    playerId: str
+    prompt: str
+    hair: float = 0.5
+    eyes: float = 0.5
+    body: float = 0.5
+    outfit: float = 0.5
+    accessories: float = 0.5
 
 # ─────────────────────────── avatar upload ───────────────────────────────────
 @app.post("/avatar/upload")
@@ -113,6 +127,31 @@ async def upload_avatar(
     dest.write_bytes(await file.read())
 
     return {"url": f"/static/{playerId}/{dest.name}"}
+
+
+@app.post("/avatar/create", response_model=AvatarSeed)
+async def create_avatar(
+    playerId: str = Form(...),
+    prompt: str = Form(...),
+    hair: float = Form(0.5),
+    eyes: float = Form(0.5),
+    body: float = Form(0.5),
+    outfit: float = Form(0.5),
+    accessories: float = Form(0.5),
+    reference: UploadFile | None = File(None),
+) -> AvatarSeed:
+    image_bytes = await reference.read() if reference else None
+    seed = generate_avatar(
+        player_id=playerId,
+        prompt=prompt,
+        image_bytes=image_bytes,
+        hair=hair,
+        eyes=eyes,
+        body=body,
+        outfit=outfit,
+        accessories=accessories,
+    )
+    return seed
 
 # ────────────────────────── profile / soul-seed ──────────────────────────────
 @app.post("/soulseed", response_model=SoulSeedResponse)
@@ -149,7 +188,7 @@ def api_start(req: StartRequest) -> SceneResponse:
     state = _read_json(STATE_FILE, {"soulMap": {}})
 
     initial_tag = "intro_001"
-    state.setdefault("soulMap", {})[req.soulSeedId] = [initial_tag]
+    state.setdefault("soulMap", {})[req.soulSeedId] = []
     _write_json(STATE_FILE, state)
 
     return _scene_to_response(initial_tag, story)
