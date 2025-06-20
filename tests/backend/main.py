@@ -7,7 +7,7 @@ profile.  The older health-check route remains for backwards
 compatibility so existing tests continue to pass.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, constr
 from pathlib import Path
@@ -56,6 +56,10 @@ def slugify(value: str) -> str:
     return slug
 
 
+def make_soulSeedId(player_name: str, archetype: str) -> str:
+    return hashlib.sha256(f"{player_name}|{archetype}".encode()).hexdigest()[:12]
+
+
 class PlayerProfileIn(BaseModel):
     playerName: constr(strip_whitespace=True, min_length=1)
     archetypePreset: str
@@ -87,6 +91,15 @@ def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
         soulSeedId=soul_seed_id,
         initSceneTag="intro_001",
     )
+
+
+@app.post("/avatar/upload")
+def upload_avatar(playerId: str = Form(...), file: UploadFile = File(...)) -> dict:
+    uploads = Path(__file__).resolve().parents[2] / "uploads" / playerId
+    uploads.mkdir(parents=True, exist_ok=True)
+    dest = uploads / f"orig_001{Path(file.filename).suffix}"
+    dest.write_bytes(file.file.read())
+    return {"url": f"/static/{playerId}/{dest.name}"}
 
 
 def import_main():

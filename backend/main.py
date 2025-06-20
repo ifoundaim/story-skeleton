@@ -15,6 +15,10 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict, constr
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ritual
+
 # ─────────────────────────────── paths ───────────────────────────────────────
 BASE_DIR    = Path(__file__).resolve().parent
 DATA_FILE   = BASE_DIR / "player_profile.json"
@@ -25,6 +29,11 @@ UPLOADS_DIR = BASE_DIR.parent / "uploads"             # one level above backend/
 
 app = FastAPI(title="SoulSeed API")
 app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
+
+
+@app.on_event("startup")
+async def _init() -> None:
+    await ritual.setup()
 
 # ────────────────────────────── helpers ──────────────────────────────────────
 def _read_json(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -65,6 +74,19 @@ class SoulSeedResponse(BaseModel):
     initSceneTag: str
 
 
+class RitualRequest(BaseModel):
+    playerId: str
+    askText: constr(max_length=280)
+    seekText: constr(max_length=280)
+    knockText: constr(max_length=280)
+    theme: str
+
+
+class RitualResponse(BaseModel):
+    theme: str
+    intentVector: list[float]
+
+
 class StartRequest(BaseModel):
     soulSeedId: str
 
@@ -90,10 +112,25 @@ class ChoiceRequest(BaseModel):
         )
 
 
+ChoiceRequest.model_rebuild()
+
+
 class SceneResponse(BaseModel):
     sceneTag: str
     text: str
     choices: list[dict[str, str]]
+
+
+@app.post("/ritual", response_model=RitualResponse)
+async def api_ritual(payload: RitualRequest) -> RitualResponse:
+    data = await ritual.record(
+        payload.playerId,
+        payload.askText,
+        payload.seekText,
+        payload.knockText,
+        payload.theme,
+    )
+    return RitualResponse(theme=data["theme"], intentVector=data["intentVector"])
 
 # ─────────────────────────── avatar upload ───────────────────────────────────
 @app.post("/avatar/upload")
@@ -143,12 +180,7 @@ def _scene_to_response(tag: str, story: dict[str, Any]) -> SceneResponse:
 @app.post("/start", response_model=SceneResponse)
 def api_start(req: StartRequest) -> SceneResponse:
     story = _read_json(STORY_FILE, {})
-    state = _read_json(STATE_FILE, {"soulMap": {}})
-
     initial_tag = "intro_001"
-    state.setdefault("soulMap", {})[req.soulSeedId] = [initial_tag]
-    _write_json(STATE_FILE, state)
-
     return _scene_to_response(initial_tag, story)
 
 # choose – pure python part
@@ -166,7 +198,7 @@ def _choose_py(req: ChoiceRequest) -> SceneResponse:
         raise KeyError(f"Choice '{key}' not available")
 
     next_tag = str_key_map[key]
-    state.setdefault("soulMap", {}).setdefault(req.soulSeedId, []).append(next_tag)
+    state.setdefault("soulMap", {})[req.soulSeedId] = [next_tag]
     _write_json(STATE_FILE, state)
 
     return _scene_to_response(next_tag, story)

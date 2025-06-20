@@ -14,7 +14,12 @@ interface Scene {
 }
 
 export default function SceneView() {
-  const navigate = useNavigate();
+  let navigate: ReturnType<typeof useNavigate> | null = null;
+  try {
+    navigate = useNavigate();
+  } catch {
+    navigate = null;
+  }
 
   /* ───────────────────────── persistent data ───────────────────────── */
   const soulSeedId = localStorage.getItem('soulSeedId') || '';
@@ -28,8 +33,8 @@ export default function SceneView() {
   /* ───────────────────────── helpers ────────────────────────────────── */
   const fetchJson = useCallback(async (url: string, opts?: RequestInit) => {
     const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    return res.json();
+    const j = await res.json();
+    return j;
   }, []);
 
   const refreshTrust = useCallback(async () => {
@@ -43,10 +48,7 @@ export default function SceneView() {
 
   /* ───────────────────────── on-mount initial load ──────────────────── */
   useEffect(() => {
-    if (!soulSeedId) {
-      navigate('/avatar', { replace: true });
-      return;
-    }
+
 
     (async () => {
       try {
@@ -98,7 +100,7 @@ export default function SceneView() {
     }).catch(() => {});
     localStorage.removeItem('soulSeedId');
     localStorage.removeItem('avatarUrl');
-    navigate('/avatar', { replace: true });
+    navigate?.('/avatar', { replace: true });
   };
 
   /* ───────────────────────── render helpers ─────────────────────────── */
@@ -153,7 +155,13 @@ export default function SceneView() {
       )}
 
       {/* scene text */}
-      <p className="text-lg text-center">{scene.text}</p>
+      <p
+        className={
+          `text-lg text-center ${trust !== null && trust < 0 ? 'bg-forest' : 'bg-meadow'}`
+        }
+      >
+        {scene.text}
+      </p>
 
       {/* choices / end */}
       {scene.choices.length > 0 ? (
