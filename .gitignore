@@ -1,3 +1,6 @@
 .env
 backend/.env
 /tests/__pycache__/
+
+__pycache__/
+backend/__pycache__/
