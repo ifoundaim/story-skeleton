@@ -83,6 +83,14 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 
 Codex automatically stubs missing upstream APIs; once a sprint lands, flip the feature flag in `codex/config.yaml`.
 
+### CO01 Orchestrator Quickstart
+Run:
+```bash
+python run_codex.py
+```
+Visit `http://localhost:9000/tasks` for task status.
+
+
 ---
 
 ## 🧪 Tests & CI
