@@ -1,13 +1,15 @@
 {
+  "trust": {
+    "demo": -5
+  },
   "soulMap": {
-    "721e3ae27fc8": [
+    "5c532466e26a": [
       "intro_001"
     ],
-    "ce2dd7686773": [
-      "intro_001"
-    ],
-    "e9102dc81782": [
-      "intro_001"
+    "6e6a13d439a6": [
+      "intro_001",
+      "mysterious_cave",
+      "investigate_noise"
     ]
   }
 }

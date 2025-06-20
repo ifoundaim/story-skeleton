@@ -1,219 +1,167 @@
 // frontend/src/scenes/AvatarCreate.tsx
-import { useState } from 'react';
-<<<<<<< HEAD
-<<<<<<< HEAD
-import { useNavigate } from 'react-router-dom';
-=======
-import { useAvatar } from '../AvatarContext';
->>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
-=======
-import { motion } from 'framer-motion';
->>>>>>> 84dcd5d (Enhance scenes with motion transitions and Tailwind)
-import axios from 'axios';
+import { useState, FormEvent } from 'react'
+import { useNavigate }          from 'react-router-dom'
+import { motion }               from 'framer-motion'
+import { useAvatar }            from '../AvatarContext'
 
-export default function AvatarCreate() {
-  const [name, setName] = useState('');
-  const [preset, setPreset] = useState('');
-  const [customText, setCustomText] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState('');
-<<<<<<< HEAD
-  const [error, setError] = useState<string | null>(null);
-  const navigate = useNavigate();
-=======
-  const [profile, setProfile] = useState<Record<string, string> | null>(null);
-  const { setAvatarUrl } = useAvatar();
->>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
+/* ———————————————————————— types ———————————————————————— */
+interface SoulSeedRes {
+  playerId:    string
+  soulSeedId:  string
+  initSceneTag: string
+}
 
-  const slugify = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .replace(/-+/g, '-');
+/* ———————————————————————— component ———————————————————————— */
+export default function AvatarCreate () {
+  const navigate              = useNavigate()
+  const { setAvatarUrl }      = useAvatar()
 
-  const handleAvatarCreation = async () => {
-    if (!name || !preset) {
-      setError('Please enter your name and select an archetype.');
-      return;
-    }
-    setError(null);
+  const [name,        setName]        = useState('')
+  const [preset,      setPreset]      = useState('Visionary Dreamer')
+  const [custom,      setCustom]      = useState('')
+  const [file,        setFile]        = useState<File | null>(null)
+  const [preview,     setPreview]     = useState<string>('')
+  const [errorMsg,    setErrorMsg]    = useState('')
 
+  /* — uploads — */
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setFile(f)
+    setPreview(URL.createObjectURL(f))
+  }
+
+  /* — submit — */
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setErrorMsg('')
+
+    if (!name.trim())          { setErrorMsg('Name required');    return }
+    if (!preset && !custom)    { setErrorMsg('Pick an archetype'); return }
+
+    /* 1 / create soul-seed profile */
+    let res: Response
     try {
-      let avatarUrl: string | null = null;
+      res = await fetch('/soulseed', {
+        method : 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body   : JSON.stringify({
+          playerName     : name.trim(),
+          archetypePreset: preset,
+          archetypeCustom: custom.trim() || null
+        })
+      })
+    } catch { setErrorMsg('Network error'); return }
 
-      // 1) if the user picked a file, upload it first
-      if (file) {
-        const fd = new FormData();
-        const playerId = slugify(name);
-        fd.append('playerId', playerId);
-        fd.append('file', file);
-        const up = await axios.post('/avatar/upload', fd);
-        avatarUrl = up.data.url;
-        // persist it so our scene view can show it
-        localStorage.setItem('avatarUrl', avatarUrl);
-      }
-
-      // 2) create the player profile on the server
-      const body = {
-        playerName: name,
-        archetypePreset: preset,
-        archetypeCustom: customText || null,
-        avatarReferenceUrl: avatarUrl,
-      };
-      const res = await axios.post('/soulseed', body);
-
-      // store soulSeedId so SceneView can pick up where we left off
-      localStorage.setItem('soulSeedId', res.data.soulSeedId);
-      navigate('/scene');
-    } catch (e: any) {
-      console.error(e);
-      setError('Failed to create avatar. Please try again.');
+    if (!res.ok) {
+      setErrorMsg('Could not create profile')
+      return
     }
-<<<<<<< HEAD
-=======
-    const body = {
-      playerName: name,
-      archetypePreset: preset,
-      archetypeCustom: customText || null,
-      avatarReferenceUrl: avatarUrl,
-    };
-    const res = await axios.post('/soulseed', body);
-    setProfile(res.data);
-    const returnedUrl = (res.data && res.data.avatarReferenceUrl) || avatarUrl;
-    if (returnedUrl) {
-      localStorage.setItem('avatarUrl', returnedUrl);
-      setAvatarUrl(returnedUrl);
-    }
->>>>>>> 21591e2d54e369f7ecd73f9b9dec1f71d79d7af7
-  };
+    const data: SoulSeedRes = await res.json()
+    localStorage.setItem('soulSeedId', data.soulSeedId)
+    localStorage.setItem('playerId',   data.playerId)
 
+    /* 2 / upload avatar (optional) */
+    let avatarURL = ''
+    if (file) {
+      const fd = new FormData()
+      fd.append('playerId', data.playerId)
+      fd.append('file', file)
+      try {
+        const r = await fetch('/avatar/upload', { method:'POST', body: fd })
+        if (r.ok) {
+          const j = await r.json(); avatarURL = j.url
+          localStorage.setItem('avatarUrl', avatarURL)
+          setAvatarUrl(avatarURL)
+        }
+      } catch {/* ignore upload failure */}
+    }
+
+    /* 3 / go to story */
+    navigate('/scene')
+  }
+
+  /* ———————————————————————— render ———————————————————————— */
   return (
-<<<<<<< HEAD
-    <div style={{ padding: 24, fontFamily: 'sans-serif', maxWidth: 600, margin: 'auto' }}>
-      <h3>Avatar Creation</h3>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      <input
-        placeholder="Your Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        style={{ padding: 6, width: '100%' }}
-      />
-      <br /><br />
-
-      <select
-        value={preset}
-        onChange={(e) => setPreset(e.target.value)}
-        style={{ padding: 6, width: '100%' }}
-      >
-        <option value="">Select Archetype</option>
-        <option value="Visionary Dreamer">Visionary Dreamer</option>
-        <option value="Sacred Union">Sacred Union</option>
-        <option value="Builder Path">Builder Path</option>
-        <option value="Healer Path">Healer Path</option>
-        <option value="Guide Path">Guide Path</option>
-      </select>
-      <br /><br />
-
-      <label>
-        Describe your own archetype (optional)
-        <br />
-        <textarea
-          rows={3}
-          value={customText}
-          onChange={(e) => setCustomText(e.target.value)}
-          style={{ width: '100%', padding: 6 }}
-        />
-      </label>
-      <br /><br />
-
-      <input
-        type="file"
-        onChange={(e) => {
-          const f = e.target.files?.[0] || null;
-          setFile(f);
-          setPreview(f ? URL.createObjectURL(f) : '');
-        }}
-      />
-      {preview && (
-        <div style={{ marginTop: 8 }}>
-          <img src={preview} alt="preview" style={{ maxWidth: 80 }} />
-        </div>
-      )}
-      <br /><br />
-
-      <button onClick={handleAvatarCreation} style={{ padding: '10px 20px', background: '#0069d9', color: '#fff', border: 'none', borderRadius: 4 }}>
-        Confirm Avatar
-      </button>
-    </div>
-=======
     <motion.div
-      className="flex items-center justify-center min-h-screen p-6"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.5 }}
+      initial={{ opacity:0, y:10 }}
+      animate={{ opacity:1, y:0 }}
+      exit={{ opacity:0, y:-10 }}
+      transition={{ duration:0.4 }}
+      className="max-w-xl mx-auto p-8 space-y-6"
     >
-      <div className="w-full max-w-md space-y-4 text-xl font-medium">
-        <h3 className="text-2xl font-bold text-center">Avatar Creation</h3>
-        <input
-          className="w-full p-2 border rounded-md"
-          placeholder="Your Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <select
-          className="w-full p-2 border rounded-md"
-          value={preset}
-          onChange={(e) => setPreset(e.target.value)}
-        >
-          <option value="">Select Archetype</option>
-          <option value="Visionary Dreamer">Visionary Dreamer</option>
-          <option value="Sacred Union">Sacred Union</option>
-          <option value="Builder Path">Builder Path</option>
-          <option value="Healer Path">Healer Path</option>
-          <option value="Guide Path">Guide Path</option>
-        </select>
-        <label className="block">
-          <span>Describe your own archetype (optional)</span>
-          <textarea
-            className="w-full p-2 border rounded-md mt-1"
-            rows={3}
-            value={customText}
-            onChange={(e) => setCustomText(e.target.value)}
+      <h1 className="text-2xl font-semibold text-center">Avatar Creation</h1>
+
+      {/* form */}
+      <form onSubmit={handleSubmit} className="space-y-4">
+
+        {/* name */}
+        <div className="space-y-1">
+          <label className="block font-medium">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={e=>setName(e.target.value)}
+            className="w-full px-3 py-2 border rounded"
           />
-        </label>
-        <input
-          type="file"
-          onChange={(e) => {
-            const f = e.target.files?.[0] || null;
-            setFile(f);
-            setPreview(f ? URL.createObjectURL(f) : '');
-          }}
-        />
-        {preview && (
-          <div>
-            <img src={preview} alt="preview" className="max-w-[80px]" />
-          </div>
-        )}
+        </div>
+
+        {/* archetype preset */}
+        <div className="space-y-1">
+          <label className="block font-medium">Choose an archetype</label>
+          <select
+            value={preset}
+            onChange={e=>setPreset(e.target.value)}
+            className="w-full px-3 py-2 border rounded"
+          >
+            <option>Visionary Dreamer</option>
+            <option>Stoic Guardian</option>
+            <option>Curious Wanderer</option>
+            <option>Ingenious Tactician</option>
+          </select>
+        </div>
+
+        {/* custom archetype */}
+        <div className="space-y-1">
+          <label className="block font-medium">
+            Describe your own archetype (optional)
+          </label>
+          <textarea
+            rows={3}
+            value={custom}
+            onChange={e=>setCustom(e.target.value)}
+            className="w-full px-3 py-2 border rounded"
+          />
+        </div>
+
+        {/* avatar file */}
+        <div className="space-y-1">
+          <label className="block font-medium">Avatar image</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFile}
+          />
+          {preview && (
+            <img
+              src={preview}
+              alt="preview"
+              className="w-24 h-24 rounded-full mt-2 object-cover"
+            />
+          )}
+        </div>
+
+        {/* error */}
+        {errorMsg && <p className="text-red-600">{errorMsg}</p>}
+
+        {/* submit */}
         <button
-          onClick={handleAvatarCreation}
-          className="px-4 py-2 text-white bg-blue-600 rounded-lg shadow hover:bg-blue-700"
+          type="submit"
+          className="w-full py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
         >
           Confirm Avatar
         </button>
-        {profile && (
-          <>
-            <h3 className="text-2xl font-bold">Avatar Created!</h3>
-            <pre className="p-3 bg-gray-200 whitespace-pre-wrap">
-              {JSON.stringify(profile, null, 2)}
-            </pre>
-            <p>You’re ready to enter the world…</p>
-          </>
-        )}
-      </div>
+      </form>
     </motion.div>
->>>>>>> 84dcd5d (Enhance scenes with motion transitions and Tailwind)
-  );
+  )
 }

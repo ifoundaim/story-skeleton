@@ -16,31 +16,22 @@ interface Scene {
 export default function SceneView() {
   const navigate = useNavigate();
 
-  /* ------------------------------------------------------------------ */
-  /*  persistent data                                                   */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── persistent data ───────────────────────── */
   const soulSeedId = localStorage.getItem('soulSeedId') || '';
   const avatarUrl  = localStorage.getItem('avatarUrl')   || '';
 
-  /* ------------------------------------------------------------------ */
-  /*  local state                                                       */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── local state ────────────────────────────── */
   const [scene,  setScene]  = useState<Scene | null>(null);
   const [trust,  setTrust]  = useState<number | null>(null);
   const [error,  setError]  = useState<string>('');
 
-  /* ------------------------------------------------------------------ */
-  /*  small helper to fetch JSON and reject on non-OK                   */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── helpers ────────────────────────────────── */
   const fetchJson = useCallback(async (url: string, opts?: RequestInit) => {
     const res = await fetch(url, opts);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
   }, []);
 
-  /* ------------------------------------------------------------------ */
-  /*  trust helper                                                      */
-  /* ------------------------------------------------------------------ */
   const refreshTrust = useCallback(async () => {
     try {
       const data = await fetchJson(`/trust?soulSeedId=${soulSeedId}`);
@@ -50,9 +41,7 @@ export default function SceneView() {
     }
   }, [fetchJson, soulSeedId]);
 
-  /* ------------------------------------------------------------------ */
-  /*  on mount – route-guard + load intro scene                         */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── on-mount initial load ──────────────────── */
   useEffect(() => {
     if (!soulSeedId) {
       navigate('/avatar', { replace: true });
@@ -75,16 +64,21 @@ export default function SceneView() {
     })();
   }, [soulSeedId, fetchJson, refreshTrust, navigate]);
 
-  /* ------------------------------------------------------------------ */
-  /*  choose handler                                                    */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── choose handler ─────────────────────────── */
   const handleChoice = async (choiceTag: string) => {
     if (!scene) return;
     try {
       const data: Scene = await fetchJson('/choose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ soulSeedId, tag: choiceTag }),
+        /** 
+         * NOTE: sceneTag is now included – this fixes the 422 error.
+         */
+        body: JSON.stringify({
+          soulSeedId,
+          sceneTag: scene.sceneTag,   // ← NEW
+          tag: choiceTag,
+        }),
       });
       setScene(data);
       await refreshTrust();
@@ -95,24 +89,19 @@ export default function SceneView() {
     }
   };
 
-  /* ------------------------------------------------------------------ */
-  /*  restart handler                                                   */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── restart handler ────────────────────────── */
   const handleRestart = async () => {
     await fetch('/reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ soulSeedId }),
-    }).catch(() => {});   // swallow errors – it’s just a reset
-
+    }).catch(() => {});
     localStorage.removeItem('soulSeedId');
     localStorage.removeItem('avatarUrl');
     navigate('/avatar', { replace: true });
   };
 
-  /* ------------------------------------------------------------------ */
-  /*  render helpers                                                    */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── render helpers ─────────────────────────── */
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-4">
@@ -135,9 +124,7 @@ export default function SceneView() {
     );
   }
 
-  /* ------------------------------------------------------------------ */
-  /*  main UI                                                           */
-  /* ------------------------------------------------------------------ */
+  /* ───────────────────────── main UI ────────────────────────────────── */
   return (
     <motion.div
       key={scene.sceneTag}
