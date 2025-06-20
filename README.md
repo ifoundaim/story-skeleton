@@ -48,6 +48,13 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 | `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
 | `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
 
+### Soul Map API
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/v1/soulmap/{playerId}` | Retrieve trait snapshot |
+| POST | `/v1/soulmap/delta` | Apply choice delta |
+
 ---
 
 ## 🔗 Data Contract Quick‑Links
