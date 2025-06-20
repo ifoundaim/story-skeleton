@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Liminal      from './scenes/Liminal';
 import AvatarCreate from './scenes/AvatarCreate';
+import AvatarBuilder from './scenes/AvatarBuilder';
 import SceneView    from './scenes/SceneView';
 
 /**
@@ -21,6 +22,7 @@ export default function App() {
         {/* intro / avatar creation */}
         <Route path="/liminal" element={<Liminal />} />
         <Route path="/avatar" element={<AvatarCreate />} />
+        <Route path="/avatar/builder" element={<AvatarBuilder />} />
 
         {/* guarded story view */}
         <Route

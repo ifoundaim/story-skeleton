@@ -48,6 +48,13 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 | `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
 | `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
 
+### Soul Map API
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/v1/soulmap/{playerId}` | Retrieve trait snapshot |
+| POST | `/v1/soulmap/delta` | Apply choice delta |
+
 ---
 
 ## 🔗 Data Contract Quick‑Links
@@ -82,6 +89,14 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 | CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |
 
 Codex automatically stubs missing upstream APIs; once a sprint lands, flip the feature flag in `codex/config.yaml`.
+
+### CO01 Orchestrator Quickstart
+Run:
+```bash
+python run_codex.py
+```
+Visit `http://localhost:9000/tasks` for task status.
+
 
 ---
 

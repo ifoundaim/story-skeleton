@@ -57,7 +57,9 @@ def slugify(value: str) -> str:
 
 
 def make_soulSeedId(player_name: str, archetype: str) -> str:
-    return hashlib.sha256(f"{player_name}|{archetype}".encode()).hexdigest()[:12]
+    """Deterministic short hash for tests."""
+    seed = f"{player_name}|{archetype}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:12]
 
 
 class PlayerProfileIn(BaseModel):
@@ -94,11 +96,11 @@ def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
 
 
 @app.post("/avatar/upload")
-def upload_avatar(playerId: str = Form(...), file: UploadFile = File(...)) -> dict:
-    uploads = Path(__file__).resolve().parents[2] / "uploads" / playerId
-    uploads.mkdir(parents=True, exist_ok=True)
-    dest = uploads / f"orig_001{Path(file.filename).suffix}"
-    dest.write_bytes(file.file.read())
+async def avatar_upload(playerId: str = Form(...), file: UploadFile = File(...)) -> dict[str, str]:
+    dest_dir = Path("uploads") / playerId
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"orig_001{Path(file.filename).suffix}"
+    dest.write_bytes(await file.read())
     return {"url": f"/static/{playerId}/{dest.name}"}
 
 
@@ -106,7 +108,4 @@ def import_main():
     """
     Helper the tests call.
 
-    Returning the FastAPI instance keeps them happy while the real
-    implementation is built in later sprints.
-    """
-    return app
+    Returning the Fas
