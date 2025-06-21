@@ -1,4 +1,3 @@
-// frontend/src/SeedContext.tsx
 import {
   createContext,
   useContext,
