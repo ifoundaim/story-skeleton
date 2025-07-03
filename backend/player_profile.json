@@ -1,17 +1,1 @@
-{
-  "aim": {
-    "playerName": "aim",
-    "archetype": "hero",
-    "soulSeedId": "e2a8e8d5dd25"
-  },
-  "hero": {
-    "playerName": "hero",
-    "archetype": "hymn",
-    "soulSeedId": "6e6a13d439a6"
-  },
-  "test": {
-    "playerName": "test",
-    "archetype": "Visionary Dreamer",
-    "soulSeedId": "98c551a47a8f"
-  }
-}
+{}

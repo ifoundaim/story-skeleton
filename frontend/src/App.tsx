@@ -45,17 +45,20 @@ export default function App() {
             }
           />
 
-<<<<<<< HEAD
-          <Route path="/liminal" element={<Liminal />} />
-          <Route path="/avatar" element={<AvatarCreate />} />
-          <Route path="/avatar/builder" element={<AvatarBuilder />} />
-=======
           {/* Avatar creation */}
           <Route
             path="/avatar"
             element={<AvatarCreate />}
           />
->>>>>>> 09c346a4e (Soul Map System v1 (SPR-SM01))
+          <Route path="/avatar/builder" element={<AvatarBuilder />} />
+          <Route
+            path="/liminal"
+            element={
+              hasSeed
+                ? <Liminal />
+                : <Navigate to="/avatar" replace />
+            }
+          />
 
           {/* Ritual: only after creating avatar */}
           <Route

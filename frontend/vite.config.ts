@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 5173,
-      proxy: {
+      ey: {
         '/soulseed': {
           target: backend,
           changeOrigin: true,
@@ -43,6 +43,11 @@ export default defineConfig(({ mode }) => {
 
         // Only upload needs to be proxied under /avatar:
         '/avatar/upload': {
+          target: backend,
+          changeOrigin: true,
+        },
+
+        '/soulmap': {
           target: backend,
           changeOrigin: true,
         },

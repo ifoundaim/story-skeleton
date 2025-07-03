@@ -4,6 +4,10 @@
     "choices": {
       "1": "mysterious_cave",
       "2": "peaceful_river"
+    },
+    "media": {
+      "images": [],
+      "audio": []
     }
   },
   "dark_forest": {
@@ -11,6 +15,10 @@
     "choices": {
       "1": "investigate_noise",
       "2": "run_away"
+    },
+    "media": {
+      "images": [],
+      "audio": []
     }
   },
   "sunny_meadow": {
@@ -18,31 +26,63 @@
     "choices": {
       "1": "go_to_river",
       "2": "lie_down"
+    },
+    "media": {
+      "images": [],
+      "audio": []
     }
   },
   "investigate_noise": {
-    "text": "You move toward the noise and discover a hidden treasure chest! The End."
+    "text": "You move toward the noise and discover a hidden treasure chest! The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   },
   "run_away": {
-    "text": "You run away safely but always wonder what you missed. The End."
+    "text": "You run away safely but always wonder what you missed. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   },
   "go_to_river": {
-    "text": "You sit by the river and find peace in the sound of water. The End."
+    "text": "You sit by the river and find peace in the sound of water. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   },
   "lie_down": {
-    "text": "You lie down in the meadow and fall into a deep, restful sleep. The End."
+    "text": "You lie down in the meadow and fall into a deep, restful sleep. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   },
   "peaceful_river": {
-    "text": "You follow the path to a peaceful river. The sound of running water calms your spirit. The End."
+    "text": "You follow the path to a peaceful river. The sound of running water calms your spirit. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   },
   "mysterious_cave": {
     "text": "You venture into a mysterious cave. The air is damp and echoes with distant sounds.",
     "choices": {
       "1": "investigate_noise",
       "2": "run_away"
+    },
+    "media": {
+      "images": [],
+      "audio": []
     }
   },
   "secret_cave": {
-    "text": "You discover a hidden cave glittering with ancient crystals. The air hums with power!"
+    "text": "You discover a hidden cave glittering with ancient crystals. The air hums with power!",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   }
 }

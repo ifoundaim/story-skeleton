@@ -1,5 +1,5 @@
 // frontend/src/SeedContext.tsx
-import React, {
+import {
   createContext,
   useContext,
   useMemo,

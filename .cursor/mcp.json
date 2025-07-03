@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+      "nia": {
+        "command": "uvx",
+        "args": ["nia-mcp-server"],
+        "env": {
+          "NIA_API_KEY": "r0FRwhsv9nm3YgBeSaCzaSrLWzABQpqG",
+          "NIA_API_URL": "https://apigcp.trynia.ai/"
+        }
+      }
+    }
+  }

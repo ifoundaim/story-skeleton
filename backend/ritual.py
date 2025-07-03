@@ -133,3 +133,9 @@ async def record(
     }
     print(f"📤 [ritual.record] returning result {result}")
     return result
+
+if not os.environ.get("TESTING"):
+    # Place all DB pool or async pool setup here
+    # For example:
+    # _pool = AsyncConnectionPool(...)
+    pass

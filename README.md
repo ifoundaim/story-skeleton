@@ -6,7 +6,7 @@
 
 ## 📜 Project Overview
 
-A modular, AI‑driven narrative platform that synthesises avatars, stories, and soul‑mapping data in real‑time. Players cross the **ASK • SEEK • KNOCK** threshold, craft a personalised anime‑style hero, and experience an emergent saga shaped by every choice.
+A modular, AI‑driven narrative platform that synthesises avatars, stories, and soul‑mapping data in real‑time. Players cross the **ASK • SEEK • KNOCK** threshold, craft a personalised anime‑style hero, and experience an emergent saga shaped by every choice.
 
 ---
 
@@ -28,7 +28,11 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
              │
 ┌────────────▼──────────────┐
 │ Story Engine (SPR‑ST01)   │→ Scenes, Checkpoints
-└───────────────────────────┘
+└────────────┬──────────────┘
+             │
+┌────────────▼──────────────┐
+│ Narrative Media (SPR‑MEDIA01) │→ Images, Audio, S3
+└────────────┬──────────────┘
              │
 ┌────────────▼──────────────┐
 │ Codex Orchestrator (SPR‑CO01) │→ Task routing / validation
@@ -45,6 +49,7 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 | `/avatar/`  | Avatar Creator      | AV01   | Three.js viewer, sliders  |
 | `/soulmap/` | Soul Map service    | SM01   | Trait API + visualizer    |
 | `/story/`   | Narrative engine    | ST01   | GPT‑4o scene pipeline     |
+| `/media/`   | Media generation    | MEDIA01| Images, audio, S3 storage |
 | `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
 | `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
 
@@ -62,6 +67,7 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 * [`intentVector`](docs/contracts/intentVector_v1.md)
 * [`AvatarSeed`](docs/contracts/avatarSeed_v1.md)
 * [`SoulMapVector`](docs/contracts/soulMap_v1.md)
+* [`SceneMedia`](docs/contracts/sceneMedia_v1.md)
 
 Contracts are **versioned**; breaking changes require bumping `_vX` suffix and updating integration tests.
 
@@ -70,8 +76,8 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 ## 🛠️ Local Development
 
 1. `git clone …`
-2. `cp .env.sample .env` → fill DB & S3 creds.
-3. `docker-compose up` (spins Postgres, pgvector, minio, inference‑GPU stub).
+2. `cp .env.sample .env` → fill DB & S3 creds.
+3. `docker-compose up` (spins Postgres, pgvector, minio, inference‑GPU stub).
 4. Visit `http://localhost:3000` for the React front‑end scaffold.
 
 > **Note**: Without a GPU you can export `USE_CPU_STUBS=true` to run text‑only mocks.
@@ -82,11 +88,12 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 
 | Sprint | Start Script                | Primary Service                   |
 | ------ | --------------------------- | --------------------------------- |
-| TR01   | `pnpm dev --filter ritual`  | Ritual UI @ `localhost:3001`      |
-| AV01   | `pnpm dev --filter avatar`  | Avatar Creator @ `localhost:3002` |
-| SM01   | `pnpm dev --filter soulmap` | Soul Map API @ `localhost:8000`   |
-| ST01   | `pnpm dev --filter story`   | Story Engine @ `localhost:8001`   |
-| CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |
+| TR01   | `pnpm dev --filter ritual`  | Ritual UI @ `localhost:3001`      |
+| AV01   | `pnpm dev --filter avatar`  | Avatar Creator @ `localhost:3002` |
+| SM01   | `pnpm dev --filter soulmap` | Soul Map API @ `localhost:8000`   |
+| ST01   | `pnpm dev --filter story`   | Story Engine @ `localhost:8001`   |
+| MEDIA01| `pnpm dev --filter media`   | Media Generator @ `localhost:8002`|
+| CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |
 
 Codex automatically stubs missing upstream APIs; once a sprint lands, flip the feature flag in `codex/config.yaml`.
 
@@ -102,7 +109,7 @@ Visit `http://localhost:9000/tasks` for task status.
 
 ## 🧪 Tests & CI
 
-* **Unit tests**: `pnpm test` (Vitest)
+* **Unit tests**: `TESTING=1 pytest` (Backend) / `npm test` (Vitest)
 * **Contract tests**: `pnpm test:contracts` (runs JSON‑schema validation)
 * **End‑to‑end**: `pnpm test:e2e` (Playwright, mocked avatar render)
 * CI pipeline lives in `.github/workflows/ci.yml` and triggers on PRs to `main`.
@@ -120,7 +127,7 @@ Update status by pushing commits with one of:
 git commit -m "TR01-UI ✅ complete ritual interface"
 ```
 
-Codex parses commit messages to move tasks between **To Do → In Progress → Done**.
+Codex parses commit messages to move tasks between **To Do → In Progress → Done**.
 
 ---
 
@@ -141,7 +148,80 @@ Codex parses commit messages to move tasks between **To Do → In Progress →
 | **intentVector** | 768‑dim embedding of player intent harvested during ASK • SEEK • KNOCK. |
 | **AvatarSeed**   | JSON descriptor of player avatar + asset hashes.                        |
 | **SoulMap**      | Multidimensional vector of evolving traits & archetypes.                |
+| **SceneMedia**   | Media assets (images, audio) associated with story scenes.              |
 
 ---
 
-> *“You do not merely design your hero — you remember them.”*
+## Soul Map System v1 (SM01)
+
+### Backend
+- **Table:** `soul_map` (id UUID PK, player_id TEXT, vector pgvector(64), updated_at TIMESTAMP)
+- **API:**
+  - `GET /soulmap/{player_id}` → returns current vector (list[float]) or zero-vector
+  - `POST /soulmap/update` with `{player_id, delta: list[float]}` → adds delta, clips [-1,1], saves row
+- **Vector math:** See `backend/soulmap/vector_utils.py`
+- **Migration:**
+  - Run `alembic upgrade head` in `backend/` to create the table (requires pgvector extension)
+
+### Frontend
+- **SoulMapWidget:**
+  - Located in `frontend/src/scenes/SoulMapWidget.tsx`
+  - Fetches `/soulmap/{playerId}` and displays a radar chart of the first 8 vector traits using [recharts](https://recharts.org/)
+  - Mounted in the sidebar of `SceneView`
+
+### Tests
+- See `backend/tests/test_soulmap.py` for vector math and API endpoint tests
+
+### Dev Notes
+- Ensure Postgres is running and accessible at the connection string in `backend/alembic.ini`
+- If you change the vector size, update both backend and frontend accordingly
+
+---
+
+## Narrative Media Layer v1 (MEDIA01)
+
+### Backend
+- **Package:** `backend/media/` - Media generation and S3 management
+- **Generator:** `backend/media/generator.py` - OpenAI Image API + Suno audio generation
+- **S3 Utils:** `backend/utils/s3.py` - Asset upload/download with minio support
+- **Codex Router:** `purpose_agents/codex_router.py` - Media task enqueuing and processing
+- **API Endpoints:**
+  - `GET /media/status/{task_id}` → returns task status
+  - `GET /media/result/{task_id}` → returns generated media URLs
+- **Scene Integration:** All scene responses now include `media` field with `images[]` and `audio[]` arrays
+
+### Frontend
+- **SceneView Updates:**
+  - Lazy-loads first scene image with loading states
+  - Audio playback controls with play/pause functionality
+  - Graceful fallback when media fails to load
+- **Media Handling:**
+  - Images: Automatic loading with error handling
+  - Audio: HTML5 Audio API with loop support
+  - Responsive design for different screen sizes
+
+### Configuration
+- **Environment Variables:**
+  - `USE_CPU_STUBS=true` - Bypass real APIs for development
+  - `S3_BUCKET_NAME` - S3 bucket for media storage
+  - `S3_ENDPOINT_URL` - Minio endpoint for local development
+  - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` - S3 credentials
+
+### Constraints
+- **File Size Limits:** Images ≤5MB JPG, Audio ≤10MB MP3
+- **Graceful Degradation:** Scenes render text-only if media generation fails
+- **Async Processing:** Media generation happens in background via Codex router
+
+### Tests
+- **Backend:** `backend/tests/test_media.py` - Generator, router, and integration tests
+- **Frontend:** `frontend/src/scenes/__tests__/SceneView.test.tsx` - Media UI tests
+- **Coverage:** Media generation, S3 uploads, error handling, and UI interactions
+
+### Dev Notes
+- Media generation is queued automatically when scenes are created/advanced
+- Use `USE_CPU_STUBS=true` for development without API costs
+- S3/minio integration supports both local development and production
+
+---
+
+> *"You do not merely design your hero — you remember them."*
