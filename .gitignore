@@ -13,3 +13,4 @@ node_modules
 # Ignore MinIO system files
 minio-data/
 minio-data-backup-*/
+minio-data/.minio.sys/
