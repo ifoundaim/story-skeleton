@@ -1,9 +1,10 @@
-// frontend/src/scenes/SceneView.tsx
+// frontend/src/scenes/ç
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation }         from 'react-router-dom'
 import axios                                 from 'axios'
 import SoulMapWidget from './SoulMapWidget'
 import Dialogue from './Dialogue'
+import EmotionGraph from './EmotionGraph'
 
 interface MediaAssets {
   images: string[]
@@ -48,6 +49,9 @@ export default function SceneView() {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [audioPlaying, setAudioPlaying] = useState(false)
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
+  const [showMemory, setShowMemory] = useState(false)
+  const [memoryRecap, setMemoryRecap] = useState<string | null>(null)
+  const [memoryLoading, setMemoryLoading] = useState(false)
 
   const normalise = (raw: SceneFromAPI): Scene => ({
     sceneTag: raw.sceneTag,
@@ -80,6 +84,19 @@ export default function SceneView() {
     }
   }, [playerId, soulSeedId, nav])
 
+  const fetchMemory = useCallback(async () => {
+    if (!playerId) return
+    setMemoryLoading(true)
+    try {
+      const { data } = await axios.get(`/memory/${playerId}`)
+      setMemoryRecap(data.recap || '')
+    } catch (err) {
+      setMemoryRecap('Failed to load memory recap.')
+    } finally {
+      setMemoryLoading(false)
+    }
+  }, [playerId])
+
   useEffect(() => {
     if (!scene) fetchScene(firstTag)
     // Fetch NPC trust
@@ -110,6 +127,12 @@ export default function SceneView() {
       }
     }
   }, [scene?.media.audio])
+
+  useEffect(() => {
+    if (showMemory && memoryRecap === null && !memoryLoading) {
+      fetchMemory()
+    }
+  }, [showMemory, memoryRecap, memoryLoading, fetchMemory])
 
   const handleImageLoad = () => {
     setImageLoaded(true)
@@ -167,13 +190,19 @@ export default function SceneView() {
   }
 
   if (loading) {
-    return <p className="p-8 text-center">Loading your adventure…</p>
+    return (
+      <div className="p-8 text-center">
+        <p>Loading your adventure…</p>
+        <div style={{background: 'red', color: 'white', padding: 4, marginTop: 8}}>DEBUG: Loading state</div>
+      </div>
+    )
   }
 
   if (errorMsg) {
     return (
       <div className="p-8 text-center space-y-4">
         <p className="text-red-600">{errorMsg}</p>
+        <div style={{background: 'red', color: 'white', padding: 4}}>DEBUG: Error state</div>
         <button
           onClick={() => fetchScene(scene?.sceneTag ?? firstTag)}
           className="px-4 py-2 bg-blue-600 text-white rounded"
@@ -184,7 +213,13 @@ export default function SceneView() {
     )
   }
 
-  if (!scene) return null
+  if (!scene) {
+    return (
+      <div className="p-8 text-center">
+        <div style={{background: 'red', color: 'white', padding: 4}}>DEBUG: No scene state</div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -212,7 +247,6 @@ export default function SceneView() {
             {/* Scene Image */}
             {scene.media.images.length > 0 && (
               <div className="scene-image-container">
-                {console.log('Scene image URL:', scene.media.images[0])}
                 <img
                   src={scene.media.images[0]}
                   alt="Scene illustration"
@@ -279,6 +313,18 @@ export default function SceneView() {
         </div>
         <div className="scene-sidebar" style={{ width: 320, marginLeft: 16, border: '2px solid red' }}>
           <SoulMapWidget playerId={playerId || 'demo'} />
+          <button
+            className="mt-2 mb-2 px-3 py-1 bg-yellow-200 rounded hover:bg-yellow-300 w-full text-left"
+            onClick={() => setShowMemory(m => !m)}
+          >
+            🧠 View Memory
+          </button>
+          {showMemory && (
+            <div className="bg-white border border-yellow-400 rounded p-3 mb-2 max-h-64 overflow-y-auto text-sm whitespace-pre-line">
+              {memoryLoading ? 'Loading memory recap...' : (memoryRecap || 'No recap available.')}
+            </div>
+          )}
+          <EmotionGraph playerId={playerId || 'demo'} />
           <Dialogue avatarUrl="/default-npc.png" npcText={npcText} trust={npcTrust} />
         </div>
       </div>

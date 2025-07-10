@@ -30,6 +30,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     env_file: .env              # ← pulls in POSTGRES_URL, OPENAI_API_KEY, etc.
+    environment:
+      - SYNC_MEDIA_GENERATION=true
     depends_on:
       db:
         condition: service_healthy
@@ -51,6 +53,7 @@ services:
     build:
       context: ./frontend     # ← your React/Vite app
       dockerfile: Dockerfile
+    platform: linux/amd64
     environment:
       VITE_BACKEND: "http://api:8000"
     depends_on:
@@ -60,6 +63,8 @@ services:
       - "5173:5173"
     networks:
       - app-net
+    volumes:
+      - ./frontend:/app
 
 # ───────────────────────┐
   #         MINIO          │

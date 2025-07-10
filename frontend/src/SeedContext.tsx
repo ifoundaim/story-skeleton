@@ -3,10 +3,10 @@ import {
   createContext,
   useContext,
   useMemo,
-  ReactNode,
   useState,
   useCallback,
 } from 'react'
+import type { ReactNode } from 'react'
 
 interface SeedCtx {
   /** True if a soulSeedId exists in memory or localStorage */

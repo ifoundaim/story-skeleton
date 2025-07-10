@@ -9,3 +9,7 @@ backend/__pycache__/
 *.py[cod]
 node_modules
 node_modules
+
+# Ignore MinIO system files
+minio-data/
+minio-data-backup-*/

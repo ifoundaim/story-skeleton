@@ -20,13 +20,13 @@ import hashlib
 import json
 import re
 import sys
-from typing import Any, Union, Dict
+from typing import Any, Union, Dict, cast
 
 # 4️⃣ Third-party libs
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ConfigDict, constr
+from pydantic import BaseModel, Field, constr, ConfigDict
 
 # ─── Path patching for internal modules ────────────────────────────────────────
 REPO_ROOT = BASE_DIR.parent
@@ -41,11 +41,14 @@ import soulmap
 from backend.npc import router as npc_router
 from backend.repository_router import router as repository_router
 from backend.media.models import MediaAssets
+from backend.emotion.router import router as emotion_router
+from backend.emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
+from purpose_agents.tasks import recap_builder
 
 # ─── File paths ───────────────────────────────────────────────────────────────
-DATA_FILE   = BASE_DIR / "player_profile.json"
-STORY_FILE  = BASE_DIR / "story.json"
-STATE_FILE  = BASE_DIR / "player_state.json"
+DATA_FILE   = str(BASE_DIR / "player_profile.json")
+STORY_FILE  = str(BASE_DIR / "story.json")
+STATE_FILE  = str(BASE_DIR / "player_state.json")
 EDITOR_FILE = BASE_DIR / "editor.html"
 UPLOADS_DIR = BASE_DIR.parent / "uploads"
 
@@ -53,6 +56,7 @@ app = FastAPI(title="SoulSeed API")
 app.include_router(soulmap.router, prefix='/soulmap')
 app.include_router(npc_router, prefix='/npc')
 app.include_router(repository_router, prefix='/repository')
+app.include_router(emotion_router, prefix='')
 app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
 if not os.environ.get("TESTING"):
@@ -64,13 +68,10 @@ if not os.environ.get("TESTING"):
 
 JSONDict = Dict[str, Any]
 
-def _read_json(path: Union[str, Path], fallback: JSONDict) -> JSONDict:
+def _read_json(path: str, fallback: JSONDict) -> JSONDict:
     if not path:
         return fallback
-    path_str = str(path) if path is not None else ""
-    if not path_str:
-        return fallback
-    p = Path(path_str)
+    p = Path(path)
     if p.exists():
         try:
             return json.loads(p.read_text(encoding="utf-8")) or fallback
@@ -80,13 +81,10 @@ def _read_json(path: Union[str, Path], fallback: JSONDict) -> JSONDict:
     return fallback
 
 
-def _write_json(path: Union[str, Path], data: JSONDict) -> None:
+def _write_json(path: str, data: JSONDict) -> None:
     if not path:
         return
-    path_str = str(path) if path is not None else ""
-    if not path_str:
-        return
-    p = Path(path_str)
+    p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -104,7 +102,7 @@ def make_soul_seed_id(player_name: str, archetype: str) -> str:
 
 # ─── Models ────────────────────────────────────────────────────────────────────
 class PlayerProfileIn(BaseModel):
-    playerName: constr(strip_whitespace=True, min_length=1)
+    playerName: str = Field(..., min_length=1)
     archetypePreset: str
     archetypeCustom: str | None = None
 
@@ -115,9 +113,9 @@ class SoulSeedResponse(BaseModel):
 
 class RitualRequest(BaseModel):
     playerId: str
-    askText: constr(max_length=280)
-    seekText: constr(max_length=280)
-    knockText: constr(max_length=280)
+    askText: str = Field(..., max_length=280)
+    seekText: str = Field(..., max_length=280)
+    knockText: str = Field(..., max_length=280)
     theme: str
 
 class RitualResponse(BaseModel):
@@ -156,14 +154,15 @@ StartRequest.model_rebuild()
 ChoiceRequest.model_rebuild()
 
 
-
 class SceneResponse(BaseModel):
     sceneTag: str
     text: str
     choices: list[dict[str, str]]
     media: MediaAssets = Field(default_factory=MediaAssets)
 
-# ────────────────────────────── Core Endpoints ──────────────────────────────
+SceneResponse.model_rebuild()
+
+# ─────────────────────────────── Core Endpoints ───────────────────────────────
 @app.post("/ritual", response_model=RitualResponse)
 async def api_ritual(payload: RitualRequest) -> RitualResponse:
     print(f"🔮 [main] /ritual payload={payload.json()}")
@@ -189,7 +188,7 @@ async def api_ritual(payload: RitualRequest) -> RitualResponse:
         raise HTTPException(500, "Failed to generate story tree")
 
     # Load player profile to get soulSeedId
-    profiles = _read_json(DATA_FILE, {})
+    profiles = _read_json(str(DATA_FILE), {})
     soul_seed_id = None
     for pid, profile in profiles.items():
         if pid == payload.playerId:
@@ -199,11 +198,11 @@ async def api_ritual(payload: RitualRequest) -> RitualResponse:
         print(f"⚠️ [main] soulSeedId not found for playerId={payload.playerId}")
         raise HTTPException(500, "Failed to find soulSeedId for player")
 
-    state = _read_json(STATE_FILE, {"stories": {}})
+    state = _read_json(str(STATE_FILE), {"stories": {}})
     if "stories" not in state:
         state["stories"] = {}
-    state["stories"][soul_seed_id] = {"tree": tree, "current": first_tag}
-    _write_json(STATE_FILE, state)
+    state["stories"][soul_seed_id] = {"tree": tree, "current": first_tag, "history": [first_tag]}
+    _write_json(str(STATE_FILE), state)
 
     # Enqueue media generation for the first scene
     print(f"[DEBUG] codex_router id in /ritual endpoint: {id(codex_router)}")
@@ -254,14 +253,31 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
     archetype = payload.archetypeCustom or payload.archetypePreset
     soul_seed_id = make_soul_seed_id(payload.playerName, archetype)
 
-    profiles = _read_json(DATA_FILE, {})
+    profiles = _read_json(str(DATA_FILE), {})
     profiles[player_id] = {
         "playerName": payload.playerName,
         "archetype": archetype,
         "soulSeedId": soul_seed_id,
     }
-    _write_json(DATA_FILE, profiles)
+    _write_json(str(DATA_FILE), profiles)
     print(f"✅ [main] saved profile for player={player_id}")
+
+    # Auto-create a zero-vector soul map for the new player
+    try:
+        from backend.soulmap.models import SoulMap
+        from backend.db import SessionLocal
+        db = SessionLocal()
+        # Check if a soul map already exists for this player
+        existing = db.query(SoulMap).filter_by(player_id=player_id).first()
+        if not existing:
+            zero_vec = [0.0] * 64
+            new_row = SoulMap(player_id=player_id, vector=zero_vec)
+            db.add(new_row)
+            db.commit()
+        db.close()
+        print(f"✅ [main] created zero-vector soul map for player={player_id}")
+    except Exception as e:
+        print(f"⚠️ [main] failed to create soul map for player={player_id}: {e}")
 
     return SoulSeedResponse(
         playerId=player_id,
@@ -415,6 +431,10 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     story_data["tree"] = tree
     # Update state
     story_data["current"] = next_tag
+    # Update history
+    if "history" not in story_data or not isinstance(story_data["history"], list):
+        story_data["history"] = []
+    story_data["history"].append(next_tag)
     # --- NPC trust delta integration ---
     choice_obj = scene.get("choices", {}).get(key, {})
     trust_delta = 0.0
@@ -430,6 +450,43 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
         except Exception as e:
             print(f"[main] NPC trust update failed: {e}")
     # --- END NPC trust delta integration ---
+
+    # --- Emotion delta integration ---
+    # Find player_id from soulSeedId
+    profiles = _read_json(str(DATA_FILE), {})
+    player_id = ""
+    for pid, profile in profiles.items():
+        if profile.get("soulSeedId") == req.soulSeedId:
+            player_id = pid
+            break
+    if player_id:
+        # Load emotion state
+        emotion_path = os.path.join(os.path.dirname(__file__), "emotion_state.json")
+        if os.path.exists(emotion_path):
+            with open(emotion_path, "r") as f:
+                emotion_states = json.load(f)
+        else:
+            emotion_states = {}
+        state_data = emotion_states.get(player_id, {"vector": zero_emotion_vector(), "log": []})
+        vector = state_data.get("vector", zero_emotion_vector())
+        log = state_data.get("log", [])
+        # Get emotion_delta from choice_obj
+        emotion_delta = zero_emotion_vector()
+        if isinstance(choice_obj, dict) and "emotion_delta" in choice_obj:
+            raw_delta = choice_obj["emotion_delta"]
+            if isinstance(raw_delta, list) and len(raw_delta) == EMOTION_DIM:
+                emotion_delta = [float(x) for x in raw_delta]
+        # Apply delta and clip
+        new_vector = clip_emotion_vector([v + d for v, d in zip(vector, emotion_delta)])
+        log.append({"sceneTag": req.sceneTag, "delta": emotion_delta})
+        if len(log) > 50:
+            log = log[-50:]
+        # Save updated state
+        emotion_states[player_id] = {"vector": new_vector, "log": log}
+        with open(emotion_path, "w") as f:
+            json.dump(emotion_states, f)
+    # --- END Emotion delta integration ---
+
     _write_json(str(STATE_FILE), state)
     
     # Enqueue media generation for the next scene
@@ -439,16 +496,16 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
         scene_text = next_scene.get("text", "")
         # Get player_id from soulSeedId (reverse lookup)
         profiles = _read_json(str(DATA_FILE), {})
-        player_id = ""
+        player_id2 = ""
         for pid, profile in profiles.items():
             if profile.get("soulSeedId") == req.soulSeedId:
-                player_id = pid
+                player_id2 = pid
                 break
         await codex_router.enqueue_media_generation(
             scene_tag=next_tag,
             scene_text=scene_text,
             theme="hero's journey",  # Simplified - would need to store theme
-            player_id=player_id
+            player_id=player_id2
         )
     except Exception as e:
         print(f"⚠️ [main] Media generation enqueue failed: {e}")
@@ -470,7 +527,7 @@ async def api_choose(req: ChoiceRequest = Body(...)) -> SceneResponse:
 @app.get("/trust")
 def api_trust(soulSeedId: str) -> dict[str, float]:
     print(f"🔍 [main] /trust lookup soulSeedId={soulSeedId}")
-    st = _read_json(STATE_FILE, {"trust": {}}).get("trust", {})
+    st = _read_json(str(STATE_FILE), {"trust": {}}).get("trust", {})
     trust_val = float(st.get(soulSeedId, 0))
     print(f"✅ [main] /trust -> {trust_val}")
     return {"trust": trust_val}
@@ -480,9 +537,9 @@ def api_trust(soulSeedId: str) -> dict[str, float]:
 def api_reset(soulSeedId: str | None = Form(default=None)) -> dict[str, bool]:
     if soulSeedId is None:
         raise HTTPException(404, "Missing soulSeedId")
-    state = _read_json(STATE_FILE, {"stories": {}})
+    state = _read_json(str(STATE_FILE), {"stories": {}})
     state["stories"].pop(soulSeedId, None)
-    _write_json(STATE_FILE, state)
+    _write_json(str(STATE_FILE), state)
     return {"reset": True}
 
 
@@ -509,3 +566,55 @@ def get_media_result(task_id: str) -> dict[str, Any]:
         return result.dict()
     else:
         raise HTTPException(404, "Task not found or not completed")
+
+
+# --- Resume/Restart Endpoints ---
+@app.get("/resume/{player_id}")
+def api_resume(player_id: str):
+    profiles = _read_json(str(DATA_FILE), {})
+    profile = profiles.get(player_id)
+    if not profile:
+        raise HTTPException(404, "Player not found")
+    soul_seed_id = profile.get("soulSeedId")
+    if not soul_seed_id:
+        raise HTTPException(404, "SoulSeedId not found for player")
+    state = _read_json(str(STATE_FILE), {"stories": {}})
+    story = state["stories"].get(soul_seed_id)
+    if not story:
+        raise HTTPException(404, "No story in progress for this player")
+    return {
+        "current": story.get("current"),
+        "history": story.get("history", []),
+        "tree": story.get("tree", {})
+    }
+
+class RestartRequest(BaseModel):
+    soulSeedId: str
+
+@app.post("/restart")
+def api_restart(req: RestartRequest):
+    state = _read_json(str(STATE_FILE), {"stories": {}})
+    if req.soulSeedId in state["stories"]:
+        del state["stories"][req.soulSeedId]
+        _write_json(str(STATE_FILE), state)
+    return {"restarted": True}
+
+@app.get("/memory/{player_id}")
+def api_memory(player_id: str):
+    profiles = _read_json(str(DATA_FILE), {})
+    profile = profiles.get(player_id)
+    if not profile:
+        return {"recap": "No memory recap available for this player yet."}
+    soul_seed_id = profile.get("soulSeedId")
+    if not soul_seed_id:
+        return {"recap": "No memory recap available for this player yet."}
+    state = _read_json(str(STATE_FILE), {"stories": {}})
+    story_data = state["stories"].get(soul_seed_id)
+    if not story_data:
+        return {"recap": "No memory recap available for this player yet."}
+    story = story_data.get("tree", {})
+    history = story_data.get("history", [])
+    recap = recap_builder.update_memory(player_id, story, history)
+    if not recap:
+        recap = "No memory recap available for this player yet."
+    return {"recap": recap}

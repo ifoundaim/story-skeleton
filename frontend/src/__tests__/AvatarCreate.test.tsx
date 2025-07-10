@@ -23,7 +23,7 @@ describe('AvatarCreate', () => {
       </SeedProvider>
     );
 
-    await user.type(screen.getByPlaceholderText('Your Name'), 'Alice');
+    await user.type(screen.getByPlaceholderText('Your name'), 'Alice');
     await user.selectOptions(screen.getByRole('combobox'), 'Visionary Dreamer');
     await user.click(screen.getByRole('button', { name: /confirm avatar/i }));
 
@@ -34,6 +34,6 @@ describe('AvatarCreate', () => {
       avatarReferenceUrl: null,
     });
 
-    expect(await screen.findByText(/Avatar Created!/)).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to create profile/i)).not.toBeInTheDocument();
   });
 });

@@ -17,7 +17,7 @@ def upgrade():
     op.create_table(
         'soul_map',
         sa.Column('id', sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
-        sa.Column('player_id', sa.String, nullable=False, index=True),
+        sa.Column('player_id', sa.String, nullable=False),
         sa.Column('vector', Vector(64), nullable=False),
         sa.Column('updated_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
     )

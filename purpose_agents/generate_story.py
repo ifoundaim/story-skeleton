@@ -5,6 +5,7 @@ import os
 import random
 import json
 import re
+from .codex_router import TASK_QUEUE, Task
 
 client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -87,16 +88,35 @@ Each node must include a "media" object with "images" and "audio" arrays (initia
     # --- END PATCH ---
 
     # --- PATCH: Ensure npc_text, trust_delta, and media in each node/choice ---
-    for node in story_dict.values():
+    for i, node in enumerate(story_dict.values()):
         node.setdefault("npc_text", "")
         node.setdefault("media", {"images": [], "audio": []})
         choices = node.get("choices", {})
-        for ch in choices.values():
+        for j, ch in enumerate(choices.values()):
             if isinstance(ch, dict):
                 ch.setdefault("trust_delta", 0.0)
+                # Add emotion_delta to a few sample choices
+                if (i == 0 and j == 0):
+                    ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
+                elif (i == 0 and j == 1):
+                    ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
+                elif (i == 1 and j == 0):
+                    ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
     # --- END PATCH ---
 
     first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"
     print(f"DEBUG: story_dict keys: {list(story_dict.keys())}")
     print(f"DEBUG: first_tag: {first_tag}")
+
+    if "media" not in story_dict[first_tag] or not story_dict[first_tag]["media"]:
+        story_dict[first_tag]["media"] = None  # or {}
+        task: Task = {
+            "type": "generate_image",
+            "playerId": player_id,
+            "sceneTag": first_tag,
+            "payload": {}  # Fill with relevant info as needed
+        }
+        # Idempotency: check if already enqueued/skipped for now
+        TASK_QUEUE.put(task)
+
     return first_tag, story_dict

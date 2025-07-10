@@ -1,5 +1,6 @@
 // frontend/src/scenes/AvatarCreate.tsx
-import { FormEvent, useState } from 'react'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { useNavigate }         from 'react-router-dom'
 import { motion }              from 'framer-motion'
 import axios                   from 'axios'
@@ -105,7 +106,7 @@ export default function AvatarCreate() {
         localStorage.setItem('avatarUrl', resp.data.url)
       } catch (uploadErr) {
         console.error('❌ avatar upload failed:', uploadErr)
-        // don’t block the flow on upload failure
+        // don't block the flow on upload failure
       }
     }
 

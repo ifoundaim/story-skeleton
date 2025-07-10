@@ -41,6 +41,8 @@ services:
       - "8000:8000"                   # host:container
     networks:
       - app-net
+    environment:
+      - SYNC_MEDIA_GENERATION=true
 
   # ───────────────────────────── WEB ────────────────────────────────
   web:

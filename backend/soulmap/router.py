@@ -25,7 +25,7 @@ def zero_vector():
 def get_soulmap(player_id: str, db: Session = Depends(get_db)):
     row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
     if row:
-        return {'player_id': player_id, 'vector': list(row.vector)}
+        return {'player_id': player_id, 'vector': [float(x) for x in row.vector]}
     return {'player_id': player_id, 'vector': zero_vector()}
 
 @router.post('/update')
@@ -40,4 +40,4 @@ def update_soulmap(payload: dict, db: Session = Depends(get_db)):
     new_row = SoulMap(id=uuid.uuid4(), player_id=player_id, vector=new_vec)
     db.add(new_row)
     db.commit()
-    return {'player_id': player_id, 'vector': new_vec} 
+    return {'player_id': player_id, 'vector': [float(x) for x in new_vec]} 

@@ -1,1 +1,7 @@
-{}
+{
+  "frank": {
+    "playerName": "Frank",
+    "archetype": "monk",
+    "soulSeedId": "76732d528988"
+  }
+}

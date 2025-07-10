@@ -5,11 +5,14 @@ Handles routing and enqueuing of media generation tasks for scenes.
 """
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypedDict
 from dataclasses import dataclass
 from enum import Enum
 import json
 import os
+import queue
+import time
+import sys
 
 from backend.media.models import MediaAssets, SceneMedia, MediaGenerationRequest
 from backend.media.generator import media_generator
@@ -49,10 +52,10 @@ class CodexRouter:
                                      theme: str, player_id: str,
                                      generate_images: bool = True,
                                      generate_audio: bool = True) -> str:
-        """Enqueue a media generation task"""
-        print(f"[DEBUG] enqueue_media_generation called for scene_tag={scene_tag}, player_id={player_id}")
+        """Enqueue a media generation task, or process synchronously if SYNC_MEDIA_GENERATION is set."""
+        sync_mode = os.getenv("SYNC_MEDIA_GENERATION", "false").lower() == "true"
+        print(f"[DEBUG] enqueue_media_generation called for scene_tag={scene_tag}, player_id={player_id}, sync_mode={sync_mode}")
         task_id = f"{player_id}_{scene_tag}_{int(asyncio.get_event_loop().time())}"
-        
         task = MediaTask(
             task_id=task_id,
             scene_tag=scene_tag,
@@ -63,15 +66,33 @@ class CodexRouter:
             generate_audio=generate_audio,
             status=TaskStatus.PENDING
         )
-        
         self.tasks[task_id] = task
-        self.task_queue.append(task_id)
-        
-        # Start processing if not already running
-        if not self.is_processing:
-            asyncio.create_task(self._process_queue())
-        
-        print(f"📋 [codex] Enqueued media task {task_id} for scene {scene_tag}")
+        if sync_mode:
+            try:
+                print(f"[DEBUG] Synchronous media generation for {task_id}")
+                task.status = TaskStatus.IN_PROGRESS
+                request = MediaGenerationRequest(
+                    scene_tag=task.scene_tag,
+                    scene_text=task.scene_text,
+                    theme=task.theme,
+                    player_id=task.player_id,
+                    generate_images=task.generate_images,
+                    generate_audio=task.generate_audio
+                )
+                result = await media_generator.generate_scene_media(request)
+                task.result = result
+                task.status = TaskStatus.COMPLETED
+                print(f"✅ [codex] Synchronously completed media task {task_id}")
+            except Exception as e:
+                print(f"❌ [codex] Synchronous media task failed {task_id}: {e}")
+                task.status = TaskStatus.FAILED
+                task.error_message = str(e)
+        else:
+            self.task_queue.append(task_id)
+            # Start processing if not already running
+            if not self.is_processing:
+                asyncio.create_task(self._process_queue())
+            print(f"📋 [codex] Enqueued media task {task_id} for scene {scene_tag}")
         return task_id
     
     async def _process_queue(self):
@@ -157,4 +178,30 @@ class CodexRouter:
 
 
 # Global codex router instance
-codex_router = CodexRouter() 
+codex_router = CodexRouter()
+
+# Task queue and type
+TASK_QUEUE = queue.Queue()
+class Task(TypedDict):
+    type: str
+    playerId: str
+    sceneTag: str
+    payload: dict
+
+# Ensure tasks/ directory exists for imports
+TASKS_DIR = os.path.join(os.path.dirname(__file__), 'tasks')
+if not os.path.exists(TASKS_DIR):
+    os.makedirs(TASKS_DIR)
+
+# CLI entrypoint for running tasks
+if __name__ == "__main__":
+    if "--run-tasks" in sys.argv:
+        from purpose_agents.tasks.registry import run_task
+        print("[CODEX] Task processor started. Waiting for tasks...")
+        while True:
+            try:
+                task = TASK_QUEUE.get(timeout=2)
+                print(f"[CODEX] Processing task: {task}")
+                run_task(task)
+            except queue.Empty:
+                time.sleep(1) 
