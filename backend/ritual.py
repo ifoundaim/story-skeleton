@@ -1,3 +1,5 @@
+# backend/ritual.py
+
 from __future__ import annotations
 
 import asyncio
@@ -23,14 +25,12 @@ _pool: AsyncConnectionPool | None = None
 async def setup() -> None:
     global _pool
     if _pool is None:
+        print("🔧 [ritual.setup] initializing connection pool")
         _pool = AsyncConnectionPool(POSTGRES_URL)
 
-    # ensure pgvector adapter is registered and table exists
     async with _pool.connection() as conn:
-        # 1) register the vector type on this connection
+        print("🔧 [ritual.setup] registering pgvector and ensuring ritual_logs table")
         await register_vector_async(conn)
-
-        # 2) create the table if missing
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ritual_logs (
@@ -44,7 +44,7 @@ async def setup() -> None:
                 "intentVec" vector(768),
                 created_at TIMESTAMPTZ DEFAULT (now() at time zone 'utc')
             )
-            """,
+            """
         )
 
 
@@ -54,12 +54,16 @@ def _fallback_vector(dim: int) -> List[float]:
 
 
 async def _embedding(text: str) -> List[float]:
+    print(f"🧠 [ritual._embedding] requesting embedding for text ({len(text)} chars)")
     try:
         res = await _openai_client.embeddings.create(
             model=EMBED_MODEL, input=text, dimensions=768
         )
-        return res.data[0].embedding
-    except Exception:
+        embedding = res.data[0].embedding
+        print("✅ [ritual._embedding] received embedding vector")
+        return embedding
+    except Exception as e:
+        print(f"⚠️ [ritual._embedding] failed, using fallback: {e}")
         return _fallback_vector(768)
 
 
@@ -68,6 +72,7 @@ async def _sentiment(text: str) -> List[float]:
         "Return a JSON array [neg, neu, pos] with three numbers between 0 and 1 "
         "representing the sentiment of the text."
     )
+    print(f"💬 [ritual._sentiment] requesting sentiment for text ({len(text)} chars)")
     try:
         resp = await _openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -79,31 +84,35 @@ async def _sentiment(text: str) -> List[float]:
         )
         vec = json.loads(resp.choices[0].message.content)
         if isinstance(vec, list) and len(vec) == 3:
-            return [float(v) for v in vec]
-    except Exception:
-        pass
+            sentiment = [float(v) for v in vec]
+            print(f"✅ [ritual._sentiment] received sentiment vector: {sentiment}")
+            return sentiment
+        print("⚠️ [ritual._sentiment] unexpected format, falling back")
+    except Exception as e:
+        print(f"⚠️ [ritual._sentiment] error during sentiment call: {e}")
     return [0.33, 0.33, 0.34]
 
 
 async def record(
     player_id: str, ask: str, seek: str, knock: str, theme: str
 ) -> Dict[str, List[float] | str]:
-    # ensure pool & table
+    print(f"📜 [ritual.record] starting ritual for player_id={player_id}")
     if _pool is None:
         await setup()
 
-    # fire off embedding & sentiment in parallel
     text = "\n".join([ask, seek, knock])
+    print(f"🔍 [ritual.record] combined text length: {len(text)}")
+
+    # fire off embedding & sentiment in parallel
     sent_task = asyncio.create_task(_sentiment(text))
     emb_task = asyncio.create_task(_embedding(text))
     sentiment, embedding = await asyncio.gather(sent_task, emb_task)
+    print(f"📊 [ritual.record] sentiment={sentiment} | embedding[0..3]={embedding[:3]}...")
 
     try:
         async with _pool.connection() as conn:
-            # register adapter just in case
             await register_vector_async(conn)
-
-            # insert your record
+            print("💾 [ritual.record] inserting ritual log into DB")
             await conn.execute(
                 """
                 INSERT INTO ritual_logs
@@ -113,12 +122,14 @@ async def record(
                 """,
                 (player_id, ask, seek, knock, theme, sentiment, embedding),
             )
-    except Exception:
-        # swallow DB errors so your app still returns the vectors
-        pass
+            print("✅ [ritual.record] DB insert complete")
+    except Exception as e:
+        print(f"⚠️ [ritual.record] DB insert failed (swallowed): {e}")
 
-    return {
+    result = {
         "intentVector": embedding,
         "theme": theme,
         "sentiment": sentiment,
     }
+    print(f"📤 [ritual.record] returning result {result}")
+    return result

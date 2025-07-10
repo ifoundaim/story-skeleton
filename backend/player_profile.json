@@ -8,5 +8,10 @@
     "playerName": "hero",
     "archetype": "hymn",
     "soulSeedId": "6e6a13d439a6"
+  },
+  "test": {
+    "playerName": "test",
+    "archetype": "Visionary Dreamer",
+    "soulSeedId": "98c551a47a8f"
   }
 }

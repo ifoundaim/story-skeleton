@@ -1,46 +1,61 @@
+# backend/main.py
 """
-backend/main.py – central FastAPI app for SoulSeed
-(route list is in the doc-string of the first message)
+central FastAPI app for SoulSeed
 """
+
+# 1️⃣ Future imports must come first
 from __future__ import annotations
 
+# 2️⃣ Load environment variables before anything else
+from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(dotenv_path=BASE_DIR / ".env")
+
+# 3️⃣ Standard library imports
 import hashlib
 import json
 import re
-from pathlib import Path
+import sys
 from typing import Any, Union
 
+# 4️⃣ Third-party imports
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict, constr
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# ─── Ensure both backend and repo root are on import path ────────────────────
+REPO_ROOT = BASE_DIR.parent
+sys.path.insert(0, str(BASE_DIR))   # for ritual
+sys.path.insert(0, str(REPO_ROOT))  # for purpose_agents
+
 import ritual
-from avatar import generate_avatar, AvatarSeed
+from purpose_agents.generate_story import generate_story  # dynamic story generation
 
 # ─────────────────────────────── paths ───────────────────────────────────────
-BASE_DIR    = Path(__file__).resolve().parent
 DATA_FILE   = BASE_DIR / "player_profile.json"
 STORY_FILE  = BASE_DIR / "story.json"
 STATE_FILE  = BASE_DIR / "player_state.json"
 EDITOR_FILE = BASE_DIR / "editor.html"
-UPLOADS_DIR = BASE_DIR.parent / "uploads"             # one level above backend/
+UPLOADS_DIR = BASE_DIR.parent / "uploads"
 
 app = FastAPI(title="SoulSeed API")
 app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
 @app.on_event("startup")
 async def _init() -> None:
+    print("🔧 [main] startup: initializing ritual subsystem")
     await ritual.setup()
 
-# ────────────────────────────── helpers ──────────────────────────────────────
+
 def _read_json(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8")) or fallback
         except json.JSONDecodeError:
+            print(f"⚠️ [main] JSON decode failed for {path}, using fallback")
             return fallback
     return fallback
 
@@ -51,11 +66,14 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 _slug_re = re.compile(r"[^a-z0-9]+")
 
 def slugify(value: str) -> str:
-    """simple slug without external deps"""
-    return _slug_re.sub("-", value.lower()).strip("-").strip("-")
+    return _slug_re.sub("-", value.lower()).strip("-")
 
 def make_soul_seed_id(player_name: str, archetype: str) -> str:
-    return hashlib.sha256(f"{player_name}|{archetype}".encode()).hexdigest()[:12]
+    raw = f"{player_name}|{archetype}"
+    sid = hashlib.sha256(raw.encode()).hexdigest()[:12]
+    print(f"🆔 [main] generated soulSeedId={sid} from {raw}")
+    return sid
+
 
 # ─────────────────────────────── models ──────────────────────────────────────
 class PlayerProfileIn(BaseModel):
@@ -78,6 +96,7 @@ class RitualRequest(BaseModel):
 class RitualResponse(BaseModel):
     theme: str
     intentVector: list[float]
+    nextSceneTag: str
 
 class StartRequest(BaseModel):
     soulSeedId: str
@@ -85,11 +104,9 @@ class StartRequest(BaseModel):
 class ChoiceRequest(BaseModel):
     soulSeedId: str
     sceneTag: str
-    #  front-end may send any of these ↓
     choiceTag:  Union[str, int] | None = Field(None, alias="choiceTag")
     tag:        Union[str, int] | None = Field(None, alias="tag")
     choice:     Union[str, int] | None = Field(None, alias="choice")
-
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     @property
@@ -107,9 +124,11 @@ class SceneResponse(BaseModel):
     text: str
     choices: list[dict[str, str]]
 
-# ─────────────────────────── liminal ritual endpoint ─────────────────────────
+# ────────────────────────────── ritual endpoint ──────────────────────────────
 @app.post("/ritual", response_model=RitualResponse)
 async def api_ritual(payload: RitualRequest) -> RitualResponse:
+    print(f"🔮 [main] /ritual payload={payload.json()}")
+
     data = await ritual.record(
         payload.playerId,
         payload.askText,
@@ -117,137 +136,150 @@ async def api_ritual(payload: RitualRequest) -> RitualResponse:
         payload.knockText,
         payload.theme,
     )
-    return RitualResponse(theme=data["theme"], intentVector=data["intentVector"])
 
-# ─────────────────────────── avatar upload ───────────────────────────────────
+    try:
+        first_tag, tree = await generate_story(
+            payload.playerId,
+            data["theme"],
+            data["intentVector"],
+        )
+    except Exception as e:
+        print(f"⚠️ [main] story generation failed: {e}")
+        raise HTTPException(500, "Failed to generate story tree")
+
+    state = _read_json(STATE_FILE, {"stories": {}})
+    state["stories"][payload.playerId] = {"tree": tree, "current": first_tag}
+    _write_json(STATE_FILE, state)
+
+    print(f"✅ [main] /ritual returning nextSceneTag={first_tag}")
+    return RitualResponse(
+        theme=data["theme"],
+        intentVector=data["intentVector"],
+        nextSceneTag=first_tag,
+    )
+
+
 @app.post("/avatar/upload")
 async def upload_avatar(
     playerId: str = Form(...),
     file: UploadFile = File(...),
 ) -> dict[str, str]:
+    print(f"📷 [main] upload avatar for playerId={playerId}, filename={file.filename}")
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-    ext       = Path(file.filename).suffix
-    dest_dir  = UPLOADS_DIR / playerId
+    ext = Path(file.filename).suffix
+    dest_dir = UPLOADS_DIR / playerId
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest      = dest_dir / f"orig_001{ext}"
+    dest = dest_dir / f"orig_001{ext}"
     dest.write_bytes(await file.read())
 
-    return {"url": f"/static/{playerId}/{dest.name}"}
+    url = f"/static/{playerId}/{dest.name}"
+    print(f"✅ [main] avatar stored at {dest}, serving at {url}")
+    return {"url": url}
 
-class AvatarCreateRequest(BaseModel):
-    playerId: str
-    prompt: str
-    hair: float = 0.5
-    eyes: float = 0.5
-    body: float = 0.5
-    outfit: float = 0.5
-    accessories: float = 0.5
-
-@app.post("/avatar/create", response_model=AvatarSeed)
-async def create_avatar(
-    playerId: str = Form(...),
-    prompt: str = Form(...),
-    hair: float = Form(0.5),
-    eyes: float = Form(0.5),
-    body: float = Form(0.5),
-    outfit: float = Form(0.5),
-    accessories: float = Form(0.5),
-    reference: UploadFile | None = File(None),
-) -> AvatarSeed:
-    image_bytes = await reference.read() if reference else None
-    seed = generate_avatar(
-        player_id=playerId,
-        prompt=prompt,
-        image_bytes=image_bytes,
-        hair=hair,
-        eyes=eyes,
-        body=body,
-        outfit=outfit,
-        accessories=accessories,
-    )
-    return seed
 
 # ────────────────────────── profile / soul-seed ──────────────────────────────
 @app.post("/soulseed", response_model=SoulSeedResponse)
 def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
-    player_id    = slugify(payload.playerName)
-    archetype    = payload.archetypeCustom or payload.archetypePreset
+    print(f"🎬 [main] /soulseed payload={payload.json()}")
+    player_id = slugify(payload.playerName)
+    archetype = payload.archetypeCustom or payload.archetypePreset
     soul_seed_id = make_soul_seed_id(payload.playerName, archetype)
 
-    profiles            = _read_json(DATA_FILE, {})
+    profiles = _read_json(DATA_FILE, {})
     profiles[player_id] = {
         "playerName": payload.playerName,
-        "archetype":  archetype,
+        "archetype": archetype,
         "soulSeedId": soul_seed_id,
     }
     _write_json(DATA_FILE, profiles)
+    print(f"✅ [main] saved profile for player={player_id}")
 
-    return SoulSeedResponse(playerId=player_id,
-                            soulSeedId=soul_seed_id,
-                            initSceneTag="intro_001")
+    return SoulSeedResponse(
+        playerId=player_id,
+        soulSeedId=soul_seed_id,
+        initSceneTag="intro_001",
+    )
 
-# ─────────────────────────── story helpers ───────────────────────────────────
+
 def _scene_to_response(tag: str, story: dict[str, Any]) -> SceneResponse:
-    scene   = story[tag]
+    scene = story[tag]
     choices = [
-        {"tag": str(k), "label": v.replace("_", " ").title()}
+        {"tag": str(k), "label": v.get("text", "").replace("_", " ").title()}
         for k, v in scene.get("choices", {}).items()
     ]
     return SceneResponse(sceneTag=tag, text=scene["text"], choices=choices)
 
+# ───────────────────────── ritual endpoint ─────────────────────────────────
 @app.post("/start", response_model=SceneResponse)
 def api_start(req: StartRequest) -> SceneResponse:
+    print(f"▶️ [main] /start called with soulSeedId={req.soulSeedId}")
+    state = _read_json(STATE_FILE, {"stories": {}})
+    st = state["stories"].get(req.soulSeedId)
+
+    if st:
+        print("✅ [main] using dynamic story tree")
+        return _scene_to_response(st["current"], st["tree"])
+
+    print("⚠️ [main] falling back to static story.json")
     story = _read_json(STORY_FILE, {})
-    initial_tag = "intro_001"
-    return _scene_to_response(initial_tag, story)
+    return _scene_to_response("intro_001", story)
+
 
 def _choose_py(req: ChoiceRequest) -> SceneResponse:
-    story = _read_json(STORY_FILE, {})
-    state = _read_json(STATE_FILE, {"soulMap": {}})
+    print(f"▶️ [main] choose({req.soulSeedId}, {req.sceneTag}, choice={req.choice_val})")
+    state = _read_json(STATE_FILE, {"stories": {}})
+    story_data = state["stories"].get(req.soulSeedId)
 
-    scene = story.get(req.sceneTag)
+    if story_data is None:
+        raise HTTPException(404, "No story tree found for this player")
+
+    tree = story_data["tree"]
+    scene = tree.get(req.sceneTag)
     if scene is None:
-        raise HTTPException(404, "Scene not found")
+        raise HTTPException(404, f"Scene '{req.sceneTag}' not found")
 
-    str_key_map = {str(k): v for k, v in scene.get("choices", {}).items()}
-    key         = str(req.choice_val)
+    str_key_map = {str(k): v["next"] for k, v in scene.get("choices", {}).items()}
+    key = str(req.choice_val)
     if key not in str_key_map:
-        raise KeyError(f"Choice '{key}' not available")
+        raise HTTPException(400, f"Choice '{key}' not found in scene")
 
     next_tag = str_key_map[key]
-    state.setdefault("soulMap", {})[req.soulSeedId] = [next_tag]
+    state["stories"][req.soulSeedId]["current"] = next_tag
     _write_json(STATE_FILE, state)
 
-    return _scene_to_response(next_tag, story)
+    print(f"✅ [main] next sceneTag={next_tag}")
+    return _scene_to_response(next_tag, tree)
 
-@app.post("/choice",  response_model=SceneResponse)
+# ────────────────────────────── choice endpoint ──────────────────────────────
+@app.post("/choice", response_model=SceneResponse)
 @app.post("/choose", response_model=SceneResponse)
-def api_choose(req: ChoiceRequest = Body(...)) -> SceneResponse:        # noqa: D401
+def api_choose(req: ChoiceRequest = Body(...)) -> SceneResponse:
     try:
         return _choose_py(req)
-    except KeyError as exc:                                             # → 400
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-# ─────────────────────────── trust & reset ───────────────────────────────────
+
 @app.get("/trust")
 def api_trust(soulSeedId: str) -> dict[str, float]:
+    print(f"🔍 [main] /trust lookup soulSeedId={soulSeedId}")
     st = _read_json(STATE_FILE, {"trust": {}}).get("trust", {})
-    return {"trust": float(st.get(soulSeedId, 0))}
+    trust_val = float(st.get(soulSeedId, 0))
+    print(f"✅ [main] /trust -> {trust_val}")
+    return {"trust": trust_val}
 
-def _reset(soul_seed_id: str) -> None:
-    state = _read_json(STATE_FILE, {"soulMap": {}})
-    state["soulMap"].pop(soul_seed_id, None)
-    _write_json(STATE_FILE, state)
 
 @app.post("/reset")
 def api_reset(soulSeedId: str | None = Form(default=None)) -> dict[str, bool]:
-    if soulSeedId is None:                                             # tests expect 404
+    if soulSeedId is None:
         raise HTTPException(404, "Missing soulSeedId")
     _reset(soulSeedId)
     return {"reset": True}
 
-# ───────────────────── tiny HTML editor (optional) ───────────────────────────
+
 @app.get("/editor", response_class=HTMLResponse)
 def story_editor() -> HTMLResponse:
     if EDITOR_FILE.exists():

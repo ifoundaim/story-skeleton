@@ -1,7 +1,14 @@
-# ./frontend/Dockerfile
-FROM node:20
+# frontend/Dockerfile
+FROM node:18-alpine
+
 WORKDIR /app
-COPY . /app
-RUN npm install
+
+# only copy package files, install deps first
+COPY package*.json ./
+RUN npm ci
+
+# then copy the rest of your source
+COPY . .
+
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host"]

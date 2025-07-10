@@ -1,14 +1,70 @@
-version: "3.9"
-
 services:
+  # ───────────────────────┐
+  #        DATABASE        │
+  # ───────────────────────┤
+  db:
+    image: ankane/pgvector:latest        # includes Postgres + pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB:       purposepath
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+
+  # ───────────────────────┐
+  #          API           │
+  # ───────────────────────┤
   api:
-    build: .
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    build:
+      context: ./backend        # ← point at your FastAPI backend
+      dockerfile: Dockerfile    # ← ensure you have a Dockerfile here
+    env_file: .env              # ← pulls in POSTGRES_URL, OPENAI_API_KEY, etc.
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --env-file .env
     ports:
       - "8000:8000"
+    networks:
+      - app-net
 
+  # ───────────────────────┐
+  #         FRONTEND       │
+  # ───────────────────────┤
   web:
-    build: ./frontend
+    build:
+      context: ./frontend     # ← your React/Vite app
+      dockerfile: Dockerfile
+    environment:
+      VITE_BACKEND: "http://api:8000"
+    depends_on:
+      - api
     command: npm run dev -- --host
     ports:
       - "5173:5173"
+    networks:
+      - app-net
+
+# ───────────────────────┐
+#   VOLUMES & NETWORK    │
+# ───────────────────────┤
+volumes:
+  dbdata:
+
+networks:
+  app-net:
+    driver: bridge

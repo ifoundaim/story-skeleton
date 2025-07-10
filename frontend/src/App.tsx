@@ -6,13 +6,13 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { Suspense, lazy, useEffect } from 'react';
-import { useSeed } from './SeedContext.tsx';
+import { useSeed } from './SeedContext';
 
 /* ─── lazy-loaded pages ─────────────────────────────────────────────── */
-const Liminal      = lazy(() => import('./scenes/Liminal'));
 const AvatarCreate = lazy(() => import('./scenes/AvatarCreate'));
 const AvatarBuilder = lazy(() => import('./scenes/AvatarBuilder'));
 const Ritual       = lazy(() => import('./scenes/Ritual'));
+const Liminal      = lazy(() => import('./scenes/Liminal'));
 const SceneView    = lazy(() => import('./scenes/SceneView'));
 
 /* ─── util: always scroll to top on route change ────────────────────── */
@@ -26,7 +26,6 @@ function ScrollToTop() {
 export default function App() {
   const { hasSeed } = useSeed();
 
-  /* simple  «…loading»  fallback while chunks load */
   const fallback = (
     <div className="p-8 text-center text-gray-500">Loading…</div>
   );
@@ -36,24 +35,67 @@ export default function App() {
       <ScrollToTop />
       <Suspense fallback={fallback}>
         <Routes>
-          {/* default → avatar */}
-          <Route path="/" element={<Navigate to="/avatar" replace />} />
+          {/* Default: if they've got a seed, go straight to liminal; otherwise start avatar */}
+          <Route
+            path="/"
+            element={
+              hasSeed
+                ? <Navigate to="/liminal" replace />
+                : <Navigate to="/avatar" replace />
+            }
+          />
 
+<<<<<<< HEAD
           <Route path="/liminal" element={<Liminal />} />
           <Route path="/avatar" element={<AvatarCreate />} />
           <Route path="/avatar/builder" element={<AvatarBuilder />} />
+=======
+          {/* Avatar creation */}
+          <Route
+            path="/avatar"
+            element={<AvatarCreate />}
+          />
+>>>>>>> 09c346a4e (Soul Map System v1 (SPR-SM01))
 
+          {/* Ritual: only after creating avatar */}
           <Route
             path="/ritual"
-            element={hasSeed ? <Ritual /> : <Navigate to="/avatar" replace />}
-          />
-          <Route
-            path="/scene"
-            element={hasSeed ? <SceneView /> : <Navigate to="/avatar" replace />}
+            element={
+              hasSeed
+                ? <Ritual />
+                : <Navigate to="/avatar" replace />
+            }
           />
 
-          {/* catch-all → home (avoids “relative splat” warning) */}
-          <Route path="/*" element={<Navigate to="/" replace />} />
+          {/* Liminal: entry point once profile + ritual are done */}
+          <Route
+            path="/liminal"
+            element={
+              hasSeed
+                ? <Liminal />
+                : <Navigate to="/avatar" replace />
+            }
+          />
+
+          {/* Full scene explorer */}
+          <Route
+            path="/scene"
+            element={
+              hasSeed
+                ? <SceneView />
+                : <Navigate to="/avatar" replace />
+            }
+          />
+
+          {/* Catch-all: send back to “home” logic */}
+          <Route
+            path="/*"
+            element={
+              hasSeed
+                ? <Navigate to="/liminal" replace />
+                : <Navigate to="/avatar" replace />
+            }
+          />
         </Routes>
       </Suspense>
     </BrowserRouter>

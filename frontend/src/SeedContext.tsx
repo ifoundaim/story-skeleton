@@ -1,46 +1,59 @@
-import {
+// frontend/src/SeedContext.tsx
+import React, {
   createContext,
   useContext,
   useMemo,
   ReactNode,
   useState,
   useCallback,
-} from 'react';
+} from 'react'
 
-type SeedCtx = {
-  /** Has the user created a Soul-Seed yet? */
-  hasSeed: boolean;
-  /** Store (or clear) a new seedId and broadcast the change */
-  setSeed: (id: string | null) => void;
-};
-
-const Ctx = createContext<SeedCtx | undefined>(undefined);
-
-export function SeedProvider({ children }: { children: ReactNode }) {
-  const [seedId, setSeedId] = useState<string | null>(
-    () => localStorage.getItem('soulSeedId')
-  );
-
-  const setSeed = useCallback((id: string | null) => {
-    if (id) {
-      localStorage.setItem('soulSeedId', id);
-    } else {
-      localStorage.removeItem('soulSeedId');
-    }
-    setSeedId(id);
-  }, []);
-
-  /* memo avoids re-renders unless value really changes */
-  const value = useMemo(
-    () => ({ hasSeed: !!seedId, setSeed }),
-    [seedId, setSeed]
-  );
-
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+interface SeedCtx {
+  /** True if a soulSeedId exists in memory or localStorage */
+  hasSeed: boolean
+  /** Store or clear a soulSeedId and broadcast the change */
+  setSeed: (id: string | null) => void
 }
 
-export function useSeed() {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error('useSeed must be used inside <SeedProvider>');
-  return ctx;
+const SeedContext = createContext<SeedCtx | undefined>(undefined)
+
+export function SeedProvider({ children }: { children: ReactNode }) {
+  const [seedId, setSeedId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('soulSeedId')
+    } catch {
+      return null
+    }
+  })
+
+  const setSeed = useCallback((id: string | null) => {
+    try {
+      if (id) {
+        localStorage.setItem('soulSeedId', id)
+      } else {
+        localStorage.removeItem('soulSeedId')
+      }
+    } catch {
+      // ignore
+    }
+    setSeedId(id)
+  }, [])
+
+  const value = useMemo<SeedCtx>(
+    () => ({
+      hasSeed: !!seedId,
+      setSeed,
+    }),
+    [seedId, setSeed]
+  )
+
+  return <SeedContext.Provider value={value}>{children}</SeedContext.Provider>
+}
+
+export function useSeed(): SeedCtx {
+  const ctx = useContext(SeedContext)
+  if (!ctx) {
+    throw new Error('useSeed must be used within a <SeedProvider>')
+  }
+  return ctx
 }

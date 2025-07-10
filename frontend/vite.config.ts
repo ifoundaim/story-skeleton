@@ -1,29 +1,52 @@
 // frontend/vite.config.ts
-import { defineConfig } from 'vite'
-import react            from '@vitejs/plugin-react'
+import { defineConfig, loadEnv } from 'vite'
+import react from '@vitejs/plugin-react'
 
-// shorthand for your backend target
-const BACKEND = {
-  target: 'http://localhost:8000',
-  changeOrigin: true,
-  secure: false,
-}
+export default defineConfig(({ mode }) => {
+  const env     = loadEnv(mode, process.cwd(), '')
+  const backend = env.VITE_BACKEND || 'http://localhost:8000'
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      // proxy all of your FastAPI endpoints:
-      // /soulseed, /avatar, /avatar/upload, /ritual,
-      // /start, /choose, /trust
-      '^/(?:soulseed|avatar(?:/upload)?|ritual|start|choose|trust)$': BACKEND,
+  return {
+    plugins: [react()],
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      proxy: {
+        '/soulseed': {
+          target: backend,
+          changeOrigin: true,
+        },
+        '/ritual': {
+          target: backend,
+          changeOrigin: true,
+        },
+        '/start': {
+          target: backend,
+          changeOrigin: true,
+        },
+        '/choose': {
+          target: backend,
+          changeOrigin: true,
+        },
+        '/choice': {
+          target: backend,
+          changeOrigin: true,
+        },
+        '/trust': {
+          target: backend,
+          changeOrigin: true,
+        },
+        '/reset': {
+          target: backend,
+          changeOrigin: true,
+        },
 
-      // proxy OpenAPI spec
-      '/openapi.json': BACKEND,
-
-      // proxy the entire docs/redoc tree (css, js, etc)
-      '^/docs(?:/.*)?$':   BACKEND,
-      '^/redoc(?:/.*)?$':  BACKEND,
+        // Only upload needs to be proxied under /avatar:
+        '/avatar/upload': {
+          target: backend,
+          changeOrigin: true,
+        },
+      },
     },
-  },
+  }
 })
