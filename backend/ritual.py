@@ -7,10 +7,13 @@ import random
 from typing import List, Dict
 
 import openai
-from pgvector.psycopg import register_vector
+from pgvector.psycopg import register_vector_async
 from psycopg_pool import AsyncConnectionPool
 
-POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql://user:password@localhost:5432/purposepath")
+POSTGRES_URL = os.getenv(
+    "POSTGRES_URL",
+    "postgresql://user:password@localhost:5432/purposepath",
+)
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 
 _openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
@@ -21,16 +24,19 @@ async def setup() -> None:
     global _pool
     if _pool is None:
         _pool = AsyncConnectionPool(POSTGRES_URL)
+
+    # ensure pgvector adapter is registered and table exists
     async with _pool.connection() as conn:
-        await register_vector(conn)
-        if os.getenv("PGVECTOR_EXTENSION", "false").lower() == "true":
-            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        # 1) register the vector type on this connection
+        await register_vector_async(conn)
+
+        # 2) create the table if missing
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ritual_logs (
                 id SERIAL PRIMARY KEY,
                 player_id TEXT,
-                "askText"  TEXT,
+                "askText" TEXT,
                 "seekText" TEXT,
                 "knockText" TEXT,
                 theme TEXT,
@@ -65,7 +71,10 @@ async def _sentiment(text: str) -> List[float]:
     try:
         resp = await _openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": text}],
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": text},
+            ],
             temperature=0,
         )
         vec = json.loads(resp.choices[0].message.content)
@@ -79,8 +88,11 @@ async def _sentiment(text: str) -> List[float]:
 async def record(
     player_id: str, ask: str, seek: str, knock: str, theme: str
 ) -> Dict[str, List[float] | str]:
+    # ensure pool & table
     if _pool is None:
         await setup()
+
+    # fire off embedding & sentiment in parallel
     text = "\n".join([ask, seek, knock])
     sent_task = asyncio.create_task(_sentiment(text))
     emb_task = asyncio.create_task(_embedding(text))
@@ -88,21 +100,25 @@ async def record(
 
     try:
         async with _pool.connection() as conn:
-            await register_vector(conn)
+            # register adapter just in case
+            await register_vector_async(conn)
+
+            # insert your record
             await conn.execute(
-                'INSERT INTO ritual_logs (player_id,"askText","seekText","knockText",theme,sentiment,"intentVec") '
-                'VALUES (%s,%s,%s,%s,%s,%s,%s)',
-                (
-                    player_id,
-                    ask,
-                    seek,
-                    knock,
-                    theme,
-                    sentiment,
-                    embedding,
-                ),
+                """
+                INSERT INTO ritual_logs
+                  (player_id, "askText", "seekText", "knockText",
+                   theme, sentiment, "intentVec")
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (player_id, ask, seek, knock, theme, sentiment, embedding),
             )
     except Exception:
+        # swallow DB errors so your app still returns the vectors
         pass
 
-    return {"intentVector": embedding, "theme": theme, "sentiment": sentiment}
+    return {
+        "intentVector": embedding,
+        "theme": theme,
+        "sentiment": sentiment,
+    }
