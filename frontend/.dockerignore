@@ -4,4 +4,3 @@ dist
 .gitignore
 venv
 __pycache__
-*.lock

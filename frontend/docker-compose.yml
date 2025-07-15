@@ -53,11 +53,13 @@ services:
       VITE_BACKEND: "http://api:8000"  # → used by Vite proxy
     depends_on:
       - api
-    command: npm run dev -- --host   # listen on 0.0.0.0:5173
+    command: yarn dev --host
     ports:
       - "5173:5173"
     networks:
       - app-net
+#    volumes:
+#      - ./frontend:/app
 
 # ─────────────────────────── STORAGE (optional) ─────────────────────
 # Uncomment to spin up a local MinIO bucket for uploads

@@ -1,14 +1,11 @@
 # frontend/Dockerfile
-FROM node:18-alpine
+FROM node:18-bullseye
 
 WORKDIR /app
 
-# only copy package files, install deps first
-COPY package*.json ./
+COPY package.json package-lock.json ./
 RUN npm install
 
-# then copy the rest of your source
 COPY . .
 
-EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host"]
