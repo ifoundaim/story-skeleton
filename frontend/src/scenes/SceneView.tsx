@@ -1,6 +1,7 @@
-// frontend/src/scenes/ç
+// frontend/src/scenes/SceneView.tsx
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation }         from 'react-router-dom'
+import { motion, AnimatePresence }          from 'framer-motion'
 import axios                                 from 'axios'
 import SoulMapWidget from './SoulMapWidget'
 import Dialogue from './Dialogue'
@@ -17,6 +18,7 @@ interface SceneFromAPI {
   choices?: { tag: string; label: string }[] | null
   trust?:   number | null
   media?:   MediaAssets
+  npc_text_dynamic?: string
 }
 
 interface Scene {
@@ -25,6 +27,7 @@ interface Scene {
   options:  { tag: string; label: string }[]
   trust:    number
   npc_text?: string
+  npc_text_dynamic?: string
   media:    MediaAssets
 }
 
@@ -53,11 +56,97 @@ export default function SceneView() {
   const [memoryRecap, setMemoryRecap] = useState<string | null>(null)
   const [memoryLoading, setMemoryLoading] = useState(false)
 
+  // Add test dialogue state
+  const [testDialogue, setTestDialogue] = useState<string | null>(null)
+  const [testDialogueLoading, setTestDialogueLoading] = useState(false)
+
+  // Animation states
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  // @ts-ignore - nextScene is used for transition state management
+  const [nextScene, setNextScene] = useState<Scene | null>(null)
+  const [sceneKey, setSceneKey] = useState(0) // Force re-render of scene content
+
+  // Animation variants
+  const sceneVariants = {
+    initial: { 
+      opacity: 0, 
+      y: 20,
+      scale: 0.95
+    },
+    animate: { 
+      opacity: 1, 
+      y: 0,
+      scale: 1,
+      transition: {
+        duration: 0.6,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
+    },
+    exit: { 
+      opacity: 0, 
+      y: -20,
+      scale: 0.95,
+      transition: {
+        duration: 0.4,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
+    }
+  }
+
+  const imageVariants = {
+    initial: { 
+      opacity: 0, 
+      scale: 0.8,
+      filter: 'blur(4px)'
+    },
+    animate: { 
+      opacity: 1, 
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: {
+        duration: 0.8,
+        ease: [0.25, 0.46, 0.45, 0.94],
+        delay: 0.2
+      }
+    }
+  }
+
+  const choiceVariants = {
+    initial: { 
+      opacity: 0, 
+      y: 10 
+    },
+    animate: { 
+      opacity: 1, 
+      y: 0,
+      transition: {
+        duration: 0.4,
+        ease: 'easeOut'
+      }
+    },
+    hover: { 
+      scale: 1.02,
+      y: -2,
+      boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+      transition: {
+        duration: 0.2,
+        ease: 'easeInOut'
+      }
+    },
+    tap: { 
+      scale: 0.98,
+      transition: {
+        duration: 0.1
+      }
+    }
+  }
+
   const normalise = (raw: SceneFromAPI): Scene => ({
     sceneTag: raw.sceneTag,
     question: raw.text || '',
     options : Array.isArray(raw.choices) ? raw.choices : [],
     trust   : typeof raw.trust === 'number' ? raw.trust : 0,
+    npc_text_dynamic: raw.npc_text_dynamic,
     media   : raw.media || { images: [], audio: [] }
   })
 
@@ -76,6 +165,7 @@ export default function SceneView() {
       console.log('✅ /start response', data)
       setScene(normalise(data))
       setImageLoaded(false) // Reset image loading state for new scene
+      setSceneKey(prev => prev + 1) // Force re-render for animations
     } catch (err) {
       console.error('❌ Failed to load the scene:', err)
       setErrorMsg('Failed to load the scene.')
@@ -96,6 +186,22 @@ export default function SceneView() {
       setMemoryLoading(false)
     }
   }, [playerId])
+
+  // Add test dialogue function
+  const testNpcDialogue = async () => {
+    if (!playerId) return
+    setTestDialogueLoading(true)
+    try {
+      const { data } = await axios.get(`/test/npc-dialogue/${playerId}`)
+      setTestDialogue(data.dialogue)
+      console.log('✅ Test NPC dialogue generated:', data.dialogue)
+    } catch (err) {
+      console.error('❌ Failed to generate test NPC dialogue:', err)
+      setTestDialogue('Failed to generate test dialogue')
+    } finally {
+      setTestDialogueLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!scene) fetchScene(firstTag)
@@ -158,8 +264,11 @@ export default function SceneView() {
   }
 
   const makeChoice = async (choiceTag: string) => {
-    if (!playerId || !soulSeedId || !scene) return
+    if (!playerId || !soulSeedId || !scene || isTransitioning) return
+    
     setErrorMsg('')
+    setIsTransitioning(true)
+    
     try {
       console.log('📤 POST /choose', {
         playerId,
@@ -174,7 +283,7 @@ export default function SceneView() {
         choiceTag,
       })
       console.log('✅ /choose response', nextRaw)
-      const nextScene = normalise(nextRaw)
+      const nextSceneData = normalise(nextRaw)
 
       console.log('📤 GET /trust', { soulSeedId })
       const { data: trustRaw } = await axios.get<{ trust: number }>(
@@ -182,10 +291,23 @@ export default function SceneView() {
       )
       console.log('✅ /trust response', trustRaw)
 
-      setScene({ ...nextScene, trust: trustRaw.trust })
+      const finalNextScene = { ...nextSceneData, trust: trustRaw.trust }
+      setNextScene(finalNextScene)
+      
+      // Delay scene update to allow for exit animation
+      setTimeout(() => {
+        setScene(finalNextScene)
+        setImageLoaded(false) // Reset image loading for new scene
+        setSceneKey(prev => prev + 1) // Force re-render
+        setNextScene(null)
+        setIsTransitioning(false)
+      }, 300) // Half of the transition duration for smooth crossfade
+      
     } catch (err) {
       console.error('❌ Something went wrong advancing the story:', err)
       setErrorMsg('Something went wrong advancing the story.')
+      setIsTransitioning(false)
+      setNextScene(null)
     }
   }
 
@@ -224,13 +346,25 @@ export default function SceneView() {
   return (
     <>
       <div style={{background: 'yellow', color: 'black', padding: 8}}>DEBUG: SceneView Rendered</div>
-      <div className="scene-view-container" style={{ display: 'flex' }}>
-        <div className="scene-main" style={{ flex: 1 }}>
-          <div className="p-8 max-w-xl mx-auto text-center space-y-6">
-            <img
+      <div className="scene-view-container min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex flex-col lg:flex-row">
+        <div className="scene-main flex-1 min-h-0">
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={sceneKey}
+              variants={sceneVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="p-4 md:p-8 max-w-2xl mx-auto text-center space-y-4 md:space-y-6 h-full overflow-y-auto"
+              style={{ scrollBehavior: 'smooth' }}
+            >
+            <motion.img
               src={avatarUrl}
               alt="Your avatar"
-              className="mx-auto w-32 h-32 rounded-full shadow object-cover"
+              className="mx-auto w-24 h-24 md:w-32 md:h-32 rounded-full shadow-lg object-cover"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.1, duration: 0.5 }}
             />
 
             <div className="flex items-center gap-2">
@@ -246,20 +380,26 @@ export default function SceneView() {
 
             {/* Scene Image */}
             {scene.media.images.length > 0 && (
-              <div className="scene-image-container">
-                <img
+              <div className="scene-image-container relative">
+                <motion.img
                   src={scene.media.images[0]}
                   alt="Scene illustration"
-                  className={`mx-auto max-w-full h-64 object-cover rounded-lg shadow-lg transition-opacity duration-300 ${
-                    imageLoaded ? 'opacity-100' : 'opacity-0'
-                  }`}
+                  variants={imageVariants}
+                  initial="initial"
+                  animate={imageLoaded ? "animate" : "initial"}
+                  className="mx-auto w-full max-w-md h-48 md:h-64 object-cover rounded-lg shadow-lg"
                   onLoad={handleImageLoad}
                   onError={handleImageError}
+                  style={{ willChange: 'transform, opacity, filter' }}
                 />
                 {!imageLoaded && (
-                  <div className="mx-auto w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center">
+                  <motion.div 
+                    initial={{ opacity: 1 }}
+                    animate={{ opacity: imageLoaded ? 0 : 1 }}
+                    className="absolute inset-0 mx-auto w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center"
+                  >
                     <p className="text-gray-500">Loading scene image...</p>
-                  </div>
+                  </motion.div>
                 )}
               </div>
             )}
@@ -285,34 +425,79 @@ export default function SceneView() {
             )}
 
             {scene.options.length ? (
-              <div className="space-y-3">
-                {scene.options.map(o => (
-                  <button
+              <motion.div 
+                className="space-y-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4, staggerChildren: 0.1 }}
+              >
+                {scene.options.map((o, index) => (
+                  <motion.button
                     key={o.tag}
+                    variants={choiceVariants}
+                    initial="initial"
+                    animate="animate"
+                    whileHover="hover"
+                    whileTap="tap"
                     onClick={() => makeChoice(o.tag)}
-                    className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    disabled={isTransitioning}
+                    className={`w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-medium shadow-md transition-all duration-200 ${
+                      isTransitioning ? 'opacity-50 cursor-not-allowed' : 'hover:from-blue-700 hover:to-blue-800'
+                    }`}
+                    style={{ 
+                      willChange: 'transform, box-shadow',
+                      animationDelay: `${index * 0.1}s`
+                    }}
                   >
                     {o.label}
-                  </button>
+                  </motion.button>
                 ))}
-              </div>
+              </motion.div>
             ) : (
-              <p className="italic">The End.</p>
+              <motion.p 
+                className="italic text-gray-600"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+              >
+                The End.
+              </motion.p>
             )}
 
-            <button
+            <motion.button
               onClick={() => {
                 localStorage.clear()
                 window.location.href = '/'
               }}
-              className="mt-6 px-4 py-2 bg-gray-200 rounded"
+              className="mt-6 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               Restart
-            </button>
-          </div>
+            </motion.button>
+            </motion.div>
+          </AnimatePresence>
         </div>
-        <div className="scene-sidebar" style={{ width: 320, marginLeft: 16, border: '2px solid red' }}>
+        <div className="scene-sidebar w-full lg:w-80 lg:max-w-sm p-4 lg:ml-4 bg-white/50 backdrop-blur-sm rounded-lg lg:rounded-none border-t lg:border-t-0 lg:border-l border-gray-200">
           <SoulMapWidget playerId={playerId || 'demo'} />
+          
+          {/* Add test NPC dialogue button */}
+          <button
+            className="mt-2 mb-2 px-3 py-1 bg-purple-200 rounded hover:bg-purple-300 w-full text-left"
+            onClick={testNpcDialogue}
+            disabled={testDialogueLoading}
+          >
+            {testDialogueLoading ? '🔄 Testing...' : '🧪 Test NPC Dialogue'}
+          </button>
+          
+          {/* Show test dialogue result */}
+          {testDialogue && (
+            <div className="bg-purple-100 border border-purple-400 rounded p-3 mb-2 text-sm">
+              <div className="font-semibold text-purple-800 mb-1">Test Result:</div>
+              <div className="text-purple-700 italic">"{testDialogue}"</div>
+            </div>
+          )}
+          
           <button
             className="mt-2 mb-2 px-3 py-1 bg-yellow-200 rounded hover:bg-yellow-300 w-full text-left"
             onClick={() => setShowMemory(m => !m)}
@@ -325,7 +510,7 @@ export default function SceneView() {
             </div>
           )}
           <EmotionGraph playerId={playerId || 'demo'} />
-          <Dialogue avatarUrl="/default-npc.png" npcText={npcText} trust={npcTrust} />
+          <Dialogue avatarUrl="/default-npc.png" npcText={npcText} trust={npcTrust} npcTextDynamic={testDialogue || scene.npc_text_dynamic} />
         </div>
       </div>
     </>
