@@ -1,6 +1,19 @@
 """
 Media generation service for scenes
 Handles image generation via OpenAI and audio generation via Suno
+
+IMAGE GENERATION BLOCKING:
+==========================
+To temporarily disable image generation and save API costs during testing:
+
+1. Set environment variable: BLOCK_IMAGE_GENERATION=true
+2. Or set environment variable: USE_CPU_STUBS=true (blocks all media generation)
+
+To re-enable image generation:
+1. Set BLOCK_IMAGE_GENERATION=false or unset it
+2. Ensure USE_CPU_STUBS=false
+
+This block prevents OpenAI API calls while maintaining the same interface.
 """
 
 import os
@@ -10,6 +23,7 @@ from pathlib import Path
 from typing import List, Optional
 import openai
 from .models import MediaAssets, SceneMedia, MediaGenerationRequest
+from .config import media_config
 from utils.s3 import s3_manager
 
 
@@ -17,7 +31,12 @@ class MediaGenerator:
     """Media generator for scene assets"""
     
     def __init__(self):
-        self.use_cpu_stubs = os.getenv("USE_CPU_STUBS", "false").lower() == "true"
+        # Use centralized configuration
+        self.config = media_config
+        
+        # Log the current configuration
+        media_config.print_status()
+            
         self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
     async def generate_scene_media(self, request: MediaGenerationRequest) -> SceneMedia:
@@ -25,7 +44,7 @@ class MediaGenerator:
         print(f"[DEBUG] generate_scene_media: request.generate_images={request.generate_images}")
         print(f"[DEBUG] generate_scene_media: request.generate_audio={request.generate_audio}")
         print(f"[DEBUG] generate_scene_media: request={request}")
-        print(f"[DEBUG] generate_scene_media: called for scene_tag={request.scene_tag}, player_id={request.player_id}, use_cpu_stubs={self.use_cpu_stubs}")
+        print(f"[DEBUG] generate_scene_media: called for scene_tag={request.scene_tag}, player_id={request.player_id}, image_enabled={self.config.image_generation_enabled}, audio_enabled={self.config.audio_generation_enabled}")
         try:
             media_assets = MediaAssets()
             
@@ -55,10 +74,16 @@ class MediaGenerator:
     async def _generate_images(self, request: MediaGenerationRequest) -> List[str]:
         """Generate images for a scene"""
         print("[DEBUG] Entered _generate_images")
-        if self.use_cpu_stubs:
-            print("[DEBUG] use_cpu_stubs is True, returning placeholder image")
+        
+        # Check if image generation is blocked
+        if not self.config.image_generation_enabled:
+            if self.config.block_image_generation:
+                print("🛑 IMAGE GENERATION BLOCKED: Returning placeholder image (BLOCK_IMAGE_GENERATION=true)")
+            else:
+                print("[DEBUG] use_cpu_stubs is True, returning placeholder image")
             # Return a real HTTP URL for development (ensure this file exists in uploads/ or static/)
             return ["/static/placeholder.jpg"]
+            
         print(f"[DEBUG] request.generate_images: {request.generate_images}")
         try:
             # Create prompt from scene text and theme
@@ -89,7 +114,7 @@ class MediaGenerator:
     
     async def _generate_audio(self, request: MediaGenerationRequest) -> List[str]:
         """Generate audio/OST for a scene"""
-        if self.use_cpu_stubs:
+        if not self.config.audio_generation_enabled:
             # Return stub audio URLs for development
             return [f"s3://stub-audio/{request.scene_tag}/ost.mp3"]
         

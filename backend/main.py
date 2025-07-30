@@ -44,6 +44,7 @@ from media.models import MediaAssets
 from emotion.router import router as emotion_router
 from emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
 from purpose_agents.tasks import recap_builder
+from codex.memory import update_memory as codex_update_memory
 
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
@@ -649,7 +650,8 @@ def api_memory(player_id: str):
         return {"recap": "No memory recap available for this player yet."}
     story = story_data.get("tree", {})
     history = story_data.get("history", [])
-    recap = recap_builder.update_memory(player_id, story, history)
+    # Use the enhanced codex memory system
+    recap = codex_update_memory(player_id, story, history)
     if not recap:
         recap = "No memory recap available for this player yet."
     return {"recap": recap}

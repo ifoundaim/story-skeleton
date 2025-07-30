@@ -23,6 +23,37 @@
 
 ---
 
+### ✅ Memory Recap System Sprint (MEM01) - COMPLETED
+**Short-Term Memory Recap System for Codex**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Enhanced memory recap builder in `codex/memory/recap_builder.py`
+  - Emotion vector trend analysis and inclusion in recaps
+  - NPC name extraction and interaction tracking
+  - Choice pattern detection and narrative integration
+  - Memory persistence with JSON storage and timestamp tracking
+  - API endpoint `/memory/{player_id}` for memory retrieval
+  - Frontend memory widget with "🧠 View Memory" button
+
+**Technical Implementation:**
+- **Core Module:** `codex/memory/recap_builder.py` - Enhanced narrative recap generation
+- **Memory Storage:** `codex/memory/memory_state.json` - Persistent memory with timestamps
+- **API Integration:** `backend/main.py` - Memory endpoint using enhanced codex memory system
+- **Frontend:** `frontend/src/scenes/SceneView.tsx` - Memory widget with toggle functionality
+- **Testing:** `tests/backend/test_memory.py` - Comprehensive test suite for memory functionality
+- **Agent Integration:** `codex/agents.py` - MEM01 agent for sprint tracking
+
+**Memory Features:**
+- **Narrative Generation:** Creates ~300-word 3rd-person narrative recaps
+- **Emotion Analysis:** Extracts and includes emotion trends from scene history
+- **NPC Tracking:** Identifies and mentions key NPC interactions
+- **Choice Patterns:** Detects and describes player choice approaches
+- **Word Limiting:** Intelligent truncation respecting sentence boundaries
+- **Persistence:** Automatic saving and retrieval of memory state
+
+---
+
 ## 📜 Project Overview
 
 A modular, AI‑driven narrative platform that synthesises avatars, stories, and soul‑mapping data in real‑time. Players cross the **ASK • SEEK • KNOCK** threshold, craft a personalised anime‑style hero, and experience an emergent saga shaped by every choice.
@@ -70,6 +101,7 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 | `/story/`   | Narrative engine    | ST01   | GPT‑4o scene pipeline     |
 | `/media/`   | Media generation    | MEDIA01| Images, audio, S3 storage |
 | `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
+| `/codex/memory/` | Memory system    | MEM01  | Recap builder + persistence |
 | `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
 
 ### Soul Map API
@@ -113,6 +145,7 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 | ST01   | `pnpm dev --filter story`   | Story Engine @ `localhost:8001`   |
 | MEDIA01| `pnpm dev --filter media`   | Media Generator @ `localhost:8002`|
 | CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |
+| MEM01  | `python run_codex.py`       | Memory System (integrated)        |
 
 Codex automatically stubs missing upstream APIs; once a sprint lands, flip the feature flag in `codex/config.yaml`.
 

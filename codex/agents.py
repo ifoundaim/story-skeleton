@@ -34,9 +34,14 @@ def story_agent() -> str:
     return "ST01 done"
 
 
+def memory_agent() -> str:
+    return "MEM01 done"
+
+
 AGENTS: dict[str, Agent] = {
     "TR01": Agent("Ritual", ritual_agent),
     "AV01": Agent("Avatar", avatar_agent),
     "SM01": Agent("SoulMap", soulmap_agent),
     "ST01": Agent("Story", story_agent),
+    "MEM01": Agent("Memory", memory_agent),
 }
