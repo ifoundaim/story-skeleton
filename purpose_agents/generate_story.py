@@ -98,10 +98,16 @@ Each node must include a "media" object with "images" and "audio" arrays (initia
                 # Add emotion_delta to a few sample choices
                 if (i == 0 and j == 0):
                     ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
+                    # Add soulmap_delta for first choice (courage/action)
+                    ch["soulmap_delta"] = [0.2, 0.1, 0, 0, 0, 0, 0, 0] + [0.0] * 56
                 elif (i == 0 and j == 1):
                     ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
+                    # Add soulmap_delta for second choice (caution/wisdom)
+                    ch["soulmap_delta"] = [-0.1, 0.2, 0.1, 0, 0, 0, 0, 0] + [0.0] * 56
                 elif (i == 1 and j == 0):
                     ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
+                    # Add soulmap_delta for third choice (compassion/helping)
+                    ch["soulmap_delta"] = [0, 0, 0.3, 0.2, 0, 0, 0, 0] + [0.0] * 56
     # --- END PATCH ---
 
     first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"

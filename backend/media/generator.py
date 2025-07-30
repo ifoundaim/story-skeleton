@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 import openai
 from .models import MediaAssets, SceneMedia, MediaGenerationRequest
-from ..utils.s3 import s3_manager
+from utils.s3 import s3_manager
 
 
 class MediaGenerator:

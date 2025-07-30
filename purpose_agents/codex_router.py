@@ -14,8 +14,8 @@ import queue
 import time
 import sys
 
-from backend.media.models import MediaAssets, SceneMedia, MediaGenerationRequest
-from backend.media.generator import media_generator
+from media.models import MediaAssets, SceneMedia, MediaGenerationRequest
+from media.generator import media_generator
 
 
 class TaskStatus(Enum):

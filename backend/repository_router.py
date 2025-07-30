@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import asyncio
 
-from .repository_indexer import indexer
+from repository_indexer import indexer
 
 router = APIRouter(prefix="/repository", tags=["repository"])
 

@@ -5,7 +5,7 @@ from .models import SoulMap
 from .vector_utils import clip_vector, add_vectors
 import numpy as np
 import uuid
-from backend.db import SessionLocal
+from db import SessionLocal
 
 def get_db():
     db = SessionLocal()

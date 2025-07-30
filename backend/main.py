@@ -38,11 +38,11 @@ from purpose_agents.generate_story import generate_story
 from purpose_agents.codex_router import codex_router
 print(f"[DEBUG] codex_router id at import: {id(codex_router)}")
 import soulmap
-from backend.npc import router as npc_router
-from backend.repository_router import router as repository_router
-from backend.media.models import MediaAssets
-from backend.emotion.router import router as emotion_router
-from backend.emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
+from npc import router as npc_router
+from repository_router import router as repository_router
+from media.models import MediaAssets
+from emotion.router import router as emotion_router
+from emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
 from purpose_agents.tasks import recap_builder
 
 # ─── File paths ───────────────────────────────────────────────────────────────
@@ -264,8 +264,8 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
 
     # Auto-create a zero-vector soul map for the new player
     try:
-        from backend.soulmap.models import SoulMap
-        from backend.db import SessionLocal
+        from soulmap.models import SoulMap
+        from db import SessionLocal
         db = SessionLocal()
         # Check if a soul map already exists for this player
         existing = db.query(SoulMap).filter_by(player_id=player_id).first()
@@ -405,7 +405,7 @@ def patch_story_tree(story_dict):
 
 
 async def _choose_py(req: ChoiceRequest) -> SceneResponse:
-    print(f"▶️ [main] choose({req.soulSeedId}, {req.sceneTag}, choice={req.choice_val})")
+    print(f"🟢 [main] Entered _choose_py for soulSeedId={req.soulSeedId}, sceneTag={req.sceneTag}, choice={req.choice_val}", flush=True)
     state = _read_json(str(STATE_FILE), {"stories": {}})
     story_data = state["stories"].get(req.soulSeedId)
 
@@ -425,7 +425,7 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     if key not in str_key_map:
         raise HTTPException(400, f"Choice '{key}' not found in scene choices")
     next_tag = str_key_map[key]
-    print(f"✅ [main] next sceneTag={next_tag}")
+    print(f"✅ [main] next sceneTag={next_tag}", flush=True)
     # Defensive patch again in case new tags are referenced
     tree = patch_story_tree(tree)
     story_data["tree"] = tree
@@ -442,8 +442,8 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
         trust_delta = float(choice_obj.get("trust_delta", 0.0))
     if trust_delta != 0.0:
         try:
-            from backend.npc.service import apply_trust
-            from backend.db import SessionLocal
+            from npc.service import apply_trust
+            from db import SessionLocal
             db = SessionLocal()
             apply_trust(req.soulSeedId, npc_id="companion", delta=trust_delta, db=db)
             db.close()
@@ -452,64 +452,99 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     # --- END NPC trust delta integration ---
 
     # --- Emotion delta integration ---
-    # Find player_id from soulSeedId
-    profiles = _read_json(str(DATA_FILE), {})
-    player_id = ""
-    for pid, profile in profiles.items():
-        if profile.get("soulSeedId") == req.soulSeedId:
-            player_id = pid
-            break
-    if player_id:
-        # Load emotion state
-        emotion_path = os.path.join(os.path.dirname(__file__), "emotion_state.json")
-        if os.path.exists(emotion_path):
-            with open(emotion_path, "r") as f:
-                emotion_states = json.load(f)
-        else:
-            emotion_states = {}
-        state_data = emotion_states.get(player_id, {"vector": zero_emotion_vector(), "log": []})
-        vector = state_data.get("vector", zero_emotion_vector())
-        log = state_data.get("log", [])
-        # Get emotion_delta from choice_obj
-        emotion_delta = zero_emotion_vector()
-        if isinstance(choice_obj, dict) and "emotion_delta" in choice_obj:
-            raw_delta = choice_obj["emotion_delta"]
-            if isinstance(raw_delta, list) and len(raw_delta) == EMOTION_DIM:
-                emotion_delta = [float(x) for x in raw_delta]
-        # Apply delta and clip
-        new_vector = clip_emotion_vector([v + d for v, d in zip(vector, emotion_delta)])
-        log.append({"sceneTag": req.sceneTag, "delta": emotion_delta})
-        if len(log) > 50:
-            log = log[-50:]
-        # Save updated state
-        emotion_states[player_id] = {"vector": new_vector, "log": log}
-        with open(emotion_path, "w") as f:
-            json.dump(emotion_states, f)
+    print(f"🔍 [main] Starting emotion integration for soulSeedId={req.soulSeedId}", flush=True)
+    try:
+        # Find player_id from soulSeedId
+        profiles = _read_json(str(DATA_FILE), {})
+        print(f"🔍 [main] Looking for player_id with soulSeedId={req.soulSeedId}", flush=True)
+        print(f"🔍 [main] Available profiles: {list(profiles.keys())}", flush=True)
+        player_id = ""
+        for pid, profile in profiles.items():
+            print(f"🔍 [main] Checking profile {pid}: soulSeedId={profile.get('soulSeedId')}", flush=True)
+            if profile.get("soulSeedId") == req.soulSeedId:
+                player_id = pid
+                print(f"✅ [main] Found player_id={player_id} for soulSeedId={req.soulSeedId}", flush=True)
+                break
+        if not player_id:
+            print(f"⚠️ [main] No player_id found for soulSeedId={req.soulSeedId}", flush=True)
+        if player_id:
+            print(f"🔍 [main] Processing emotion for player_id={player_id}", flush=True)
+            # Load emotion state
+            emotion_path = os.path.join(os.path.dirname(__file__), "emotion_state.json")
+            if os.path.exists(emotion_path):
+                with open(emotion_path, "r") as f:
+                    emotion_states = json.load(f)
+            else:
+                emotion_states = {}
+            state_data = emotion_states.get(player_id, {"vector": zero_emotion_vector(), "log": []})
+            vector = state_data.get("vector", zero_emotion_vector())
+            log = state_data.get("log", [])
+            # Get emotion_delta from choice_obj
+            emotion_delta = zero_emotion_vector()
+            if isinstance(choice_obj, dict) and "emotion_delta" in choice_obj:
+                raw_delta = choice_obj["emotion_delta"]
+                if isinstance(raw_delta, list) and len(raw_delta) == EMOTION_DIM:
+                    emotion_delta = [float(x) for x in raw_delta]
+            # Apply delta and clip
+            new_vector = clip_emotion_vector([v + d for v, d in zip(vector, emotion_delta)])
+            log.append({"sceneTag": req.sceneTag, "delta": emotion_delta})
+            if len(log) > 50:
+                log = log[-50:]
+            # Save updated state
+            emotion_states[player_id] = {"vector": new_vector, "log": log}
+            with open(emotion_path, "w") as f:
+                json.dump(emotion_states, f)
+            print(f"✅ [main] Emotion integration completed for player_id={player_id}", flush=True)
+    except Exception as e:
+        print(f"⚠️ [main] Emotion integration failed: {e}", flush=True)
+        import traceback
+        print(f"⚠️ [main] Emotion integration traceback: {traceback.format_exc()}", flush=True)
+        player_id = ""  # Reset player_id if emotion integration fails
     # --- END Emotion delta integration ---
 
-    _write_json(str(STATE_FILE), state)
-    
-    # Enqueue media generation for the next scene
-    print(f"[DEBUG] codex_router id in /choose endpoint: {id(codex_router)}")
-    try:
-        next_scene = tree.get(next_tag, {})
-        scene_text = next_scene.get("text", "")
-        # Get player_id from soulSeedId (reverse lookup)
-        profiles = _read_json(str(DATA_FILE), {})
-        player_id2 = ""
-        for pid, profile in profiles.items():
-            if profile.get("soulSeedId") == req.soulSeedId:
-                player_id2 = pid
-                break
-        await codex_router.enqueue_media_generation(
-            scene_tag=next_tag,
-            scene_text=scene_text,
-            theme="hero's journey",  # Simplified - would need to store theme
-            player_id=player_id2
-        )
-    except Exception as e:
-        print(f"⚠️ [main] Media generation enqueue failed: {e}")
-    
+    # --- Soulmap delta integration ---
+    print(f"🔍 [main] About to check soulmap integration, player_id: '{player_id}'", flush=True)
+    if player_id:
+        try:
+            from soulmap.models import SoulMap
+            from soulmap.vector_utils import clip_vector, add_vectors
+            from db import SessionLocal
+            db = SessionLocal()
+            
+            # Get current soulmap vector
+            row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
+            current_vector = list(row.vector) if row else [0.0] * 64
+            
+            # Debug: Log choice_obj structure
+            print(f"🔍 [main] choice_obj keys: {list(choice_obj.keys()) if isinstance(choice_obj, dict) else 'not a dict'}", flush=True)
+            print(f"🔍 [main] choice_obj: {choice_obj}", flush=True)
+            
+            # Get soulmap_delta from choice_obj
+            soulmap_delta = [0.0] * 64
+            if isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
+                raw_delta = choice_obj["soulmap_delta"]
+                if isinstance(raw_delta, list) and len(raw_delta) == 64:
+                    soulmap_delta = [float(x) for x in raw_delta]
+                    print(f"✅ [main] Found soulmap_delta: {soulmap_delta[:3]}...", flush=True)
+                else:
+                    print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
+            else:
+                print(f"⚠️ [main] No soulmap_delta found in choice_obj", flush=True)
+            
+            # Apply delta and clip
+            new_vector = clip_vector(add_vectors(current_vector, soulmap_delta))
+            
+            # Save new soulmap entry
+            new_row = SoulMap(player_id=player_id, vector=new_vector)
+            db.add(new_row)
+            db.commit()
+            db.close()
+            print(f"✅ [main] Updated soulmap for player={player_id}, delta={soulmap_delta[:3]}...", flush=True)
+        except Exception as e:
+            print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
+    # --- END Soulmap delta integration ---
+
+    print(f"🟢 [main] Returning response for soulSeedId={req.soulSeedId}, nextTag={next_tag}", flush=True)
     return _scene_to_response(next_tag, tree, player_id=player_id)
 
 # ────────────────────────────── choice endpoint ──────────────────────────────

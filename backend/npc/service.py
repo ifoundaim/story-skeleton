@@ -1,5 +1,5 @@
 from .models import NPCState
-from backend.db import SessionLocal
+from db import SessionLocal
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
 import uuid
