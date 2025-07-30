@@ -54,6 +54,67 @@
 
 ---
 
+### ✅ NPC Trust System Sprint (NPC01) - COMPLETED
+**Dynamic NPC Trust Tracking & Relationship Management**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Database-driven NPC trust system with PostgreSQL storage
+  - Real-time trust updates based on player choices
+  - Trust clamping (0.0 to 1.0 range) with automatic bounds checking
+  - NPC state persistence with metadata and last-seen tracking
+  - Frontend trust meter visualization in dialogue components
+  - Comprehensive API for trust management and retrieval
+
+**Technical Implementation:**
+- **Database:** `npc_state` table with migration (`npc01_init_npc_state.py`)
+- **Models:** `NPCState` model with trust, name, and metadata fields
+- **API Endpoints:** `GET /npc/{player_id}`, `POST /npc/update`
+- **Service Layer:** `apply_trust()` function with automatic clamping
+- **Integration:** Trust updates integrated into story choice system
+- **Frontend:** `Dialogue.tsx` component with trust meter visualization
+- **Testing:** Comprehensive test suite in `tests/backend/test_npc.py`
+- **Agent Integration:** `codex/agents.py` - NPC01 agent for sprint tracking
+
+**Trust System Features:**
+- **Dynamic Updates:** Trust changes based on choice `trust_delta` values
+- **Automatic Clamping:** Trust values automatically bounded between 0.0 and 1.0
+- **NPC Persistence:** Individual NPC states stored per player
+- **Metadata Support:** Flexible JSON metadata for future NPC features
+- **Real-time Integration:** Seamless integration with story choice system
+
+---
+
+### ✅ Emotion Engine Sprint (EMO01) - COMPLETED
+**8-Dimensional Emotion Vector System & Real-time Tracking**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - 8-dimensional emotion vector (joy, grief, awe, fear, desire, disgust, peace, rage)
+  - Real-time emotion updates based on player choices
+  - Emotion vector clamping and normalization
+  - Emotion state persistence with change logging
+  - Frontend radar chart visualization of emotional state
+  - Comprehensive emotion delta integration
+
+**Technical Implementation:**
+- **Core Models:** `EmotionState` with 8-dimensional vector and change log
+- **API Endpoints:** `GET /emotion/{player_id}` - Retrieve emotion state
+- **Integration:** Emotion deltas applied during story choices
+- **Frontend:** `EmotionGraph.tsx` with radar chart visualization
+- **Persistence:** JSON-based emotion state storage with change history
+- **Testing:** Test suite in `tests/backend/test_emotion.py`
+- **Agent Integration:** `codex/agents.py` - EMO01 agent for sprint tracking
+
+**Emotion System Features:**
+- **Multi-dimensional Tracking:** 8 distinct emotion dimensions
+- **Change History:** Log of emotion changes with scene context
+- **Visual Analytics:** Radar chart visualization of current emotional state
+- **Automatic Clamping:** Emotion values normalized to [-1.0, 1.0] range
+- **Choice Integration:** Emotion deltas applied based on story choices
+
+---
+
 ## 📜 Project Overview
 
 A modular, AI‑driven narrative platform that synthesises avatars, stories, and soul‑mapping data in real‑time. Players cross the **ASK • SEEK • KNOCK** threshold, craft a personalised anime‑style hero, and experience an emergent saga shaped by every choice.
@@ -102,6 +163,8 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 | `/media/`   | Media generation    | MEDIA01| Images, audio, S3 storage |
 | `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
 | `/codex/memory/` | Memory system    | MEM01  | Recap builder + persistence |
+| `/backend/npc/` | NPC Trust system  | NPC01  | Trust tracking + API      |
+| `/backend/emotion/` | Emotion engine | EMO01  | 8D emotion vectors        |
 | `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
 
 ### Soul Map API
@@ -146,6 +209,8 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 | MEDIA01| `pnpm dev --filter media`   | Media Generator @ `localhost:8002`|
 | CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |
 | MEM01  | `python run_codex.py`       | Memory System (integrated)        |
+| NPC01  | `python -m backend.main`    | NPC Trust API (integrated)        |
+| EMO01  | `python -m backend.main`    | Emotion Engine (integrated)       |
 
 Codex automatically stubs missing upstream APIs; once a sprint lands, flip the feature flag in `codex/config.yaml`.
 
