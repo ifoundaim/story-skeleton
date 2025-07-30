@@ -2,6 +2,25 @@
 
 > **Awaken human potential through generative mythic storytelling.**
 
+## 🎯 Recent Sprint Completions
+
+### ✅ Soulmap Integration Sprint (SM01) - COMPLETED
+**Player Choice Data Capture & Real-time Soulmap Updates**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Player choices now generate `soulmap_delta` values (64-element vectors)
+  - Real-time soulmap updates in database when choices are made
+  - Soulmap widget displays actual data instead of placeholder text
+  - Comprehensive debug logging for integration tracking
+  - Story generation includes soulmap delta fields for new stories
+
+**Technical Implementation:**
+- Backend: `backend/main.py` - `_choose_py` function with soulmap integration
+- Story Generation: `purpose_agents/generate_story.py` - Added soulmap_delta fields
+- Database: Soulmap vectors updated via PostgreSQL with pgvector
+- Frontend: SoulMapWidget now shows real-time soulmap data
+
 ---
 
 ## 📜 Project Overview
@@ -152,7 +171,7 @@ Codex parses commit messages to move tasks between **To Do → In Progress → D
 
 ---
 
-## Soul Map System v1 (SM01)
+## Soul Map System v1 (SM01) ✅ **COMPLETED**
 
 ### Backend
 - **Table:** `soul_map` (id UUID PK, player_id TEXT, vector pgvector(64), updated_at TIMESTAMP)
@@ -162,12 +181,22 @@ Codex parses commit messages to move tasks between **To Do → In Progress → D
 - **Vector math:** See `backend/soulmap/vector_utils.py`
 - **Migration:**
   - Run `alembic upgrade head` in `backend/` to create the table (requires pgvector extension)
+- **Player Choice Integration:**
+  - Story choices now include `soulmap_delta` fields (64-element float vectors)
+  - Automatic soulmap updates when players make choices via `_choose_py` function
+  - Real-time soulmap vector updates with clipping and vector math operations
 
 ### Frontend
 - **SoulMapWidget:**
   - Located in `frontend/src/scenes/SoulMapWidget.tsx`
   - Fetches `/soulmap/{playerId}` and displays a radar chart of the first 8 vector traits using [recharts](https://recharts.org/)
   - Mounted in the sidebar of `SceneView`
+  - **Now displays actual soulmap data** instead of "No soul map data yet"
+
+### Story Generation Integration
+- **Choice Deltas:** Story choices in `purpose_agents/generate_story.py` now include `soulmap_delta` values
+- **Real-time Updates:** Player choices immediately update the soulmap vector in the database
+- **Debug Logging:** Comprehensive logging tracks soulmap integration process
 
 ### Tests
 - See `backend/tests/test_soulmap.py` for vector math and API endpoint tests
@@ -175,6 +204,7 @@ Codex parses commit messages to move tasks between **To Do → In Progress → D
 ### Dev Notes
 - Ensure Postgres is running and accessible at the connection string in `backend/alembic.ini`
 - If you change the vector size, update both backend and frontend accordingly
+- **Sprint Status:** ✅ **COMPLETED** - Player choice data capture and real-time soulmap updates are fully functional
 
 ---
 
