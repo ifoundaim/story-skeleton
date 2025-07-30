@@ -37,7 +37,7 @@ import ritual
 from purpose_agents.generate_story import generate_story
 from purpose_agents.codex_router import codex_router
 print(f"[DEBUG] codex_router id at import: {id(codex_router)}")
-import soulmap
+# import soulmap
 from npc import router as npc_router
 from repository_router import router as repository_router
 from media.models import MediaAssets
@@ -45,6 +45,7 @@ from emotion.router import router as emotion_router
 from emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
 from purpose_agents.tasks import recap_builder
 from codex.memory import update_memory as codex_update_memory
+from codex.npc import generate_npc_dialogue
 
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
@@ -54,7 +55,7 @@ EDITOR_FILE = BASE_DIR / "editor.html"
 UPLOADS_DIR = BASE_DIR.parent / "uploads"
 
 app = FastAPI(title="SoulSeed API")
-app.include_router(soulmap.router, prefix='/soulmap')
+# # app.include_router(soulmap.router, prefix='/soulmap')
 app.include_router(npc_router, prefix='/npc')
 app.include_router(repository_router, prefix='/repository')
 app.include_router(emotion_router, prefix='')
@@ -160,6 +161,7 @@ class SceneResponse(BaseModel):
     text: str
     choices: list[dict[str, str]]
     media: MediaAssets = Field(default_factory=MediaAssets)
+    npc_text_dynamic: str | None = None
 
 SceneResponse.model_rebuild()
 
@@ -264,21 +266,21 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
     print(f"✅ [main] saved profile for player={player_id}")
 
     # Auto-create a zero-vector soul map for the new player
-    try:
-        from soulmap.models import SoulMap
-        from db import SessionLocal
-        db = SessionLocal()
-        # Check if a soul map already exists for this player
-        existing = db.query(SoulMap).filter_by(player_id=player_id).first()
-        if not existing:
-            zero_vec = [0.0] * 64
-            new_row = SoulMap(player_id=player_id, vector=zero_vec)
-            db.add(new_row)
-            db.commit()
-        db.close()
-        print(f"✅ [main] created zero-vector soul map for player={player_id}")
-    except Exception as e:
-        print(f"⚠️ [main] failed to create soul map for player={player_id}: {e}")
+# #     try:
+#         # from soulmap.models import SoulMap
+#         from db import SessionLocal
+#         db = SessionLocal()
+#         # Check if a soul map already exists for this player
+#         existing = db.query(SoulMap).filter_by(player_id=player_id).first()
+#         if not existing:
+#             zero_vec = [0.0] * 64
+#             new_row = SoulMap(player_id=player_id, vector=zero_vec)
+#             db.add(new_row)
+#             db.commit()
+#         db.close()
+#         print(f"✅ [main] created zero-vector soul map for player={player_id}")
+#     except Exception as e:
+#        print(f"⚠️ [main] failed to create soul map for player={player_id}: {e}")
 
     return SoulSeedResponse(
         playerId=player_id,
@@ -335,7 +337,25 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "") -> SceneRespo
     
     print(f"[DEBUG] Final media for scene {tag}: {media}")
     
-    return SceneResponse(sceneTag=tag, text=scene.get("text", ""), choices=choices, media=media)
+    # Generate dynamic NPC dialogue if player_id is available
+    npc_text_dynamic = None
+    if player_id:
+        try:
+            # For now, use a default NPC ID - in the future this could be scene-specific
+            npc_id = "companion-001"
+            npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
+            print(f"[DEBUG] Generated dynamic NPC dialogue: {npc_text_dynamic}")
+        except Exception as e:
+            print(f"[DEBUG] Failed to generate dynamic NPC dialogue: {e}")
+            npc_text_dynamic = None
+    
+    return SceneResponse(
+        sceneTag=tag, 
+        text=scene.get("text", ""), 
+        choices=choices, 
+        media=media,
+        npc_text_dynamic=npc_text_dynamic
+    )
 
 # ───────────────────────── ritual endpoint ─────────────────────────────────
 @app.post("/start", response_model=SceneResponse)
@@ -363,7 +383,7 @@ async def api_start(req: StartRequest) -> SceneResponse:
                 scene_text = current_scene.get("text", "")
                 # --- DEV ONLY: Await media generation so response includes image URL ---
                 # NOTE: For production, revert to async background task and use polling or websockets for updates.
-                await codex_router.enqueue_media_generation(
+                task_id = await codex_router.enqueue_media_generation(
                     scene_tag=current_tag,
                     scene_text=scene_text,
                     theme="hero's journey",  # Or fetch from state if available
@@ -371,7 +391,24 @@ async def api_start(req: StartRequest) -> SceneResponse:
                     generate_images=generate_images,
                     generate_audio=generate_audio
                 )
-                print(f"[main] Synchronously generated media for /start scene {current_tag}")
+                print(f"[main] Synchronously generated media for /start scene {current_tag}, task_id={task_id}")
+                
+                # Wait for the task to complete and get the result
+                import asyncio
+                max_wait = 30  # Maximum wait time in seconds
+                wait_time = 0
+                while wait_time < max_wait:
+                    result = codex_router.get_task_result(task_id)
+                    if result and result.success:
+                        print(f"[main] Media generation completed for scene {current_tag}: {result.media}")
+                        break
+                    await asyncio.sleep(0.5)
+                    wait_time += 0.5
+                    print(f"[main] Waiting for media generation... ({wait_time}s)")
+                
+                if wait_time >= max_wait:
+                    print(f"[main] Media generation timeout for scene {current_tag}")
+                    
             except Exception as e:
                 print(f"[main] Failed to synchronously generate media in /start: {e}")
         return _scene_to_response(current_tag, st["tree"], player_id=player_id)
@@ -436,17 +473,39 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     if "history" not in story_data or not isinstance(story_data["history"], list):
         story_data["history"] = []
     story_data["history"].append(next_tag)
-    # --- NPC trust delta integration ---
+    # --- NPC trust delta integration (Multi-NPC Support) ---
     choice_obj = scene.get("choices", {}).get(key, {})
-    trust_delta = 0.0
+    
+    # Handle legacy single trust_delta (backward compatibility)
+    legacy_trust_delta = 0.0
     if isinstance(choice_obj, dict):
-        trust_delta = float(choice_obj.get("trust_delta", 0.0))
-    if trust_delta != 0.0:
+        legacy_trust_delta = float(choice_obj.get("trust_delta", 0.0))
+    
+    # Handle new multi-NPC trust deltas
+    npc_trust_deltas = {}
+    if isinstance(choice_obj, dict) and "npc_trust_deltas" in choice_obj:
+        npc_trust_deltas = choice_obj.get("npc_trust_deltas", {})
+    
+    # Apply trust deltas
+    if legacy_trust_delta != 0.0 or npc_trust_deltas:
         try:
-            from npc.service import apply_trust
+            from npc.service import apply_trust, apply_trust_to_multiple
             from db import SessionLocal
             db = SessionLocal()
-            apply_trust(req.soulSeedId, npc_id="companion", delta=trust_delta, db=db)
+            
+            # Apply legacy trust delta to default companion
+            if legacy_trust_delta != 0.0:
+                # Generate consistent UUID for default companion
+                import uuid
+                companion_uuid = uuid.uuid5(uuid.NAMESPACE_OID, f"{req.soulSeedId}:companion")
+                apply_trust(req.soulSeedId, str(companion_uuid), legacy_trust_delta, db)
+                print(f"[main] Applied legacy trust delta {legacy_trust_delta} to companion")
+            
+            # Apply multi-NPC trust deltas
+            if npc_trust_deltas:
+                apply_trust_to_multiple(req.soulSeedId, npc_trust_deltas, db)
+                print(f"[main] Applied multi-NPC trust deltas: {npc_trust_deltas}")
+            
             db.close()
         except Exception as e:
             print(f"[main] NPC trust update failed: {e}")
@@ -504,45 +563,45 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     # --- END Emotion delta integration ---
 
     # --- Soulmap delta integration ---
-    print(f"🔍 [main] About to check soulmap integration, player_id: '{player_id}'", flush=True)
-    if player_id:
-        try:
-            from soulmap.models import SoulMap
-            from soulmap.vector_utils import clip_vector, add_vectors
-            from db import SessionLocal
-            db = SessionLocal()
-            
-            # Get current soulmap vector
-            row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
-            current_vector = list(row.vector) if row else [0.0] * 64
-            
-            # Debug: Log choice_obj structure
-            print(f"🔍 [main] choice_obj keys: {list(choice_obj.keys()) if isinstance(choice_obj, dict) else 'not a dict'}", flush=True)
-            print(f"🔍 [main] choice_obj: {choice_obj}", flush=True)
-            
-            # Get soulmap_delta from choice_obj
-            soulmap_delta = [0.0] * 64
-            if isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
-                raw_delta = choice_obj["soulmap_delta"]
-                if isinstance(raw_delta, list) and len(raw_delta) == 64:
-                    soulmap_delta = [float(x) for x in raw_delta]
-                    print(f"✅ [main] Found soulmap_delta: {soulmap_delta[:3]}...", flush=True)
-                else:
-                    print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
-            else:
-                print(f"⚠️ [main] No soulmap_delta found in choice_obj", flush=True)
-            
-            # Apply delta and clip
-            new_vector = clip_vector(add_vectors(current_vector, soulmap_delta))
-            
-            # Save new soulmap entry
-            new_row = SoulMap(player_id=player_id, vector=new_vector)
-            db.add(new_row)
-            db.commit()
-            db.close()
-            print(f"✅ [main] Updated soulmap for player={player_id}, delta={soulmap_delta[:3]}...", flush=True)
-        except Exception as e:
-            print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
+    # print(f"🔍 [main] About to check soulmap integration, player_id: '{player_id}'", flush=True)
+    # if player_id:
+#         try:
+#             # from soulmap.models import SoulMap
+#             # from soulmap.vector_utils import clip_vector, add_vectors
+#             from db import SessionLocal
+#             db = SessionLocal()
+#             
+#             # Get current soulmap vector
+#             row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
+#             current_vector = list(row.vector) if row else [0.0] * 64
+#             
+#             # Debug: Log choice_obj structure
+#             print(f"🔍 [main] choice_obj keys: {list(choice_obj.keys()) if isinstance(choice_obj, dict) else 'not a dict'}", flush=True)
+#             print(f"🔍 [main] choice_obj: {choice_obj}", flush=True)
+#             
+#             # Get soulmap_delta from choice_obj
+#             soulmap_delta = [0.0] * 64
+#             if isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
+#                 raw_delta = choice_obj["soulmap_delta"]
+#                 if isinstance(raw_delta, list) and len(raw_delta) == 64:
+#                     soulmap_delta = [float(x) for x in raw_delta]
+#                     print(f"✅ [main] Found soulmap_delta: {soulmap_delta[:3]}...", flush=True)
+#                 else:
+#                     print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
+#             else:
+#                 print(f"⚠️ [main] No soulmap_delta found in choice_obj", flush=True)
+#             
+#             # Apply delta and clip
+#             new_vector = clip_vector(add_vectors(current_vector, soulmap_delta))
+#             
+#             # Save new soulmap entry
+#             new_row = SoulMap(player_id=player_id, vector=new_vector)
+#             db.add(new_row)
+#             db.commit()
+#             db.close()
+#             print(f"✅ [main] Updated soulmap for player={player_id}, delta={soulmap_delta[:3]}...", flush=True)
+#         except Exception as e:
+#             print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
     # --- END Soulmap delta integration ---
 
     print(f"🟢 [main] Returning response for soulSeedId={req.soulSeedId}, nextTag={next_tag}", flush=True)
@@ -655,3 +714,28 @@ def api_memory(player_id: str):
     if not recap:
         recap = "No memory recap available for this player yet."
     return {"recap": recap}
+
+@app.get("/test/npc-dialogue/{player_id}")
+def test_npc_dialogue(player_id: str):
+    """Test endpoint to generate NPC dialogue for a player"""
+    try:
+        npc_id = "companion-001"
+        dialogue = generate_npc_dialogue(npc_id, player_id)
+        return {
+            "npc_id": npc_id,
+            "player_id": player_id,
+            "dialogue": dialogue,
+            "message": "NPC dialogue generated successfully"
+        }
+    except Exception as e:
+        print(f"Error generating NPC dialogue: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to generate NPC dialogue"
+        }
+
+
+@app.get("/test-simple")
+def test_simple():
+    return {"message": "Test endpoint working"}
+
