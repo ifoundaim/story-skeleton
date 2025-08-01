@@ -16,11 +16,12 @@ load_dotenv(BASE_DIR / ".env.cursor", override=False)  # safe dummy values for C
 load_dotenv(BASE_DIR / ".env", override=True)           # your actual local secrets
 
 # 3️⃣ Standard lib
+from datetime import datetime
 import hashlib
 import json
 import re
 import sys
-from typing import Any, Union, Dict, cast
+from typing import Any, Union, Dict, Optional, cast
 
 # 4️⃣ Third-party libs
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
@@ -39,6 +40,7 @@ from purpose_agents.codex_router import codex_router
 print(f"[DEBUG] codex_router id at import: {id(codex_router)}")
 # import soulmap
 from npc import router as npc_router
+from npc.profile_seed import ensure_npc_profile
 from repository_router import router as repository_router
 from media.models import MediaAssets
 from emotion.router import router as emotion_router
@@ -46,6 +48,7 @@ from emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
 from purpose_agents.tasks import recap_builder
 from codex.memory import update_memory as codex_update_memory
 from codex.npc import generate_npc_dialogue
+from codex.npc.group_dialogue import generate_group_dialogue, format_dialogue_for_scene
 
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
@@ -162,6 +165,8 @@ class SceneResponse(BaseModel):
     choices: list[dict[str, str]]
     media: MediaAssets = Field(default_factory=MediaAssets)
     npc_text_dynamic: str | None = None
+    npc_dialogue: list[dict[str, str]] = Field(default_factory=list)
+    dialogue_type: str = "single"  # "single" or "group"
 
 SceneResponse.model_rebuild()
 
@@ -289,7 +294,7 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
     )
 
 
-def _scene_to_response(tag: str, story: dict, player_id: str = "") -> SceneResponse:
+def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: Optional[Dict[str, Any]] = None) -> SceneResponse:
     print(f"DEBUG: _scene_to_response called with tag={tag}, story keys={list(story.keys())}")
     if tag not in story:
         return SceneResponse(
@@ -339,22 +344,118 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "") -> SceneRespo
     
     # Generate dynamic NPC dialogue if player_id is available
     npc_text_dynamic = None
+    npc_dialogue = []
+    dialogue_type = "single"
+    
     if player_id:
-        try:
-            # For now, use a default NPC ID - in the future this could be scene-specific
-            npc_id = "companion-001"
-            npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
-            print(f"[DEBUG] Generated dynamic NPC dialogue: {npc_text_dynamic}")
-        except Exception as e:
-            print(f"[DEBUG] Failed to generate dynamic NPC dialogue: {e}")
-            npc_text_dynamic = None
+        # Check for recruitment dialogue first (priority over regular dialogue)
+        recruitment_dialogue = None
+        if story_data:
+            recruitment_dialogues = story_data.get("recruitment_dialogue", [])
+            # Find recruitment dialogue for this scene
+            for dialogue_entry in recruitment_dialogues:
+                if dialogue_entry.get("scene_tag") == tag:
+                    recruitment_dialogue = dialogue_entry.get("dialogue")
+                    print(f"[DEBUG] Found recruitment dialogue for scene {tag}: {recruitment_dialogue}")
+                    break
+        
+        if recruitment_dialogue:
+            npc_text_dynamic = recruitment_dialogue
+            npc_dialogue = [{"npc_id": "recruitment", "text": recruitment_dialogue}]
+            dialogue_type = "single"
+        else:
+            try:
+                # Get NPCs present in scene
+                npcs_present = scene.get("npcs_present", [])
+                
+                # If no npcs_present defined, check if there are active companions
+                if not npcs_present:
+                    try:
+                        from backend.npc.service import get_companions
+                        from backend.db import SessionLocal
+                        db = SessionLocal()
+                        companions = get_companions(player_id, db)
+                        npcs_present = [comp.id for comp in companions[:3]]  # Limit to 3
+                        db.close()
+                        print(f"[DEBUG] Found active companions for scene: {npcs_present}")
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to get active companions: {e}")
+                        npcs_present = []
+                
+                # Generate group dialogue if multiple NPCs present
+                if len(npcs_present) > 1:
+                    try:
+                        from backend.npc.service import get_trust_scores
+                        from backend.emotion.service import get_emotion_vector
+                        from backend.db import SessionLocal
+                        
+                        db = SessionLocal()
+                        trust_scores = get_trust_scores(player_id, db)
+                        emotion_vector = get_emotion_vector(player_id)
+                        npc_metadata = story.get("_npc_metadata", {})
+                        scene_context = scene.get("text", "")
+                        
+                        # Generate group dialogue
+                        dialogue_entries = generate_group_dialogue(
+                            npcs_present=npcs_present,
+                            player_id=player_id,
+                            scene_context=scene_context,
+                            trust_scores=trust_scores,
+                            emotion_vector=emotion_vector,
+                            npc_metadata=npc_metadata
+                        )
+                        
+                        db.close()
+                        
+                        if dialogue_entries:
+                            npc_dialogue = dialogue_entries
+                            dialogue_type = "group" if len(dialogue_entries) > 1 else "single"
+                            # Set npc_text_dynamic to first dialogue for backward compatibility
+                            npc_text_dynamic = dialogue_entries[0]["text"] if dialogue_entries else None
+                            print(f"[DEBUG] Generated group dialogue with {len(dialogue_entries)} entries")
+                        else:
+                            # Fallback to single NPC dialogue
+                            npc_id = npcs_present[0] if npcs_present else "companion-001"
+                            npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
+                            npc_dialogue = [{"npc_id": npc_id, "text": npc_text_dynamic}] if npc_text_dynamic else []
+                            dialogue_type = "single"
+                        
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to generate group dialogue: {e}")
+                        # Fallback to single NPC dialogue
+                        npc_id = npcs_present[0] if npcs_present else "companion-001"
+                        npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
+                        npc_dialogue = [{"npc_id": npc_id, "text": npc_text_dynamic}] if npc_text_dynamic else []
+                        dialogue_type = "single"
+                        
+                elif len(npcs_present) == 1:
+                    # Single NPC dialogue
+                    npc_id = npcs_present[0]
+                    npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
+                    npc_dialogue = [{"npc_id": npc_id, "text": npc_text_dynamic}] if npc_text_dynamic else []
+                    dialogue_type = "single"
+                    print(f"[DEBUG] Generated single NPC dialogue for {npc_id}")
+                else:
+                    # No NPCs present, no dialogue
+                    npc_text_dynamic = None
+                    npc_dialogue = []
+                    dialogue_type = "single"
+                    print(f"[DEBUG] No NPCs present in scene {tag}")
+                    
+            except Exception as e:
+                print(f"[DEBUG] Failed to generate NPC dialogue: {e}")
+                npc_text_dynamic = None
+                npc_dialogue = []
+                dialogue_type = "single"
     
     return SceneResponse(
         sceneTag=tag, 
         text=scene.get("text", ""), 
         choices=choices, 
         media=media,
-        npc_text_dynamic=npc_text_dynamic
+        npc_text_dynamic=npc_text_dynamic,
+        npc_dialogue=npc_dialogue,
+        dialogue_type=dialogue_type
     )
 
 # ───────────────────────── ritual endpoint ─────────────────────────────────
@@ -411,6 +512,14 @@ async def api_start(req: StartRequest) -> SceneResponse:
                     
             except Exception as e:
                 print(f"[main] Failed to synchronously generate media in /start: {e}")
+        
+        # Ensure NPC profiles exist for all NPCs in the scene
+        if player_id and current_scene:
+            try:
+                ensure_npc_profile(current_scene, player_id)
+            except Exception as e:
+                print(f"[main] Failed to ensure NPC profiles in /start: {e}")
+        
         return _scene_to_response(current_tag, st["tree"], player_id=player_id)
 
     print("⚠️ [main] falling back to static story.json")
@@ -420,7 +529,8 @@ async def api_start(req: StartRequest) -> SceneResponse:
 
 def patch_story_tree(story_dict):
     """
-    Recursively add all referenced tags as default nodes until all are present.
+    Recursively add all referenced tags as meaningful continuing nodes until all are present.
+    This ensures stories continue for ~8 scenes before reaching conclusions.
     """
     added = True
     iteration = 0
@@ -435,7 +545,63 @@ def patch_story_tree(story_dict):
         if missing:
             print(f"[patch_story_tree] Iter {iteration}: Adding missing tags: {missing}")
             for tag in missing:
-                story_dict[tag] = {"text": "The story ends here.", "choices": {}, "media": {"images": [], "audio": []}}
+                # Extract tag number for intelligent patching
+                tag_num = 0
+                if '_' in tag:
+                    try:
+                        tag_num = int(tag.split('_')[1])
+                    except (IndexError, ValueError):
+                        tag_num = len(story_dict) + 1
+                else:
+                    tag_num = len(story_dict) + 1
+                
+                # Create meaningful continuing scenes for the first 6-7 nodes
+                if tag_num <= 7:
+                    # Generate next progression tags
+                    next_tag = f"tag_{tag_num + 1:03d}" if tag_num < 8 else None
+                    alt_tag = f"tag_{tag_num + 2:03d}" if tag_num < 7 else None
+                    
+                    # Create choices that continue the adventure
+                    choices = {}
+                    if next_tag and tag_num < 6:
+                        choices["1"] = {
+                            "text": "Continue deeper into the adventure",
+                            "next": next_tag,
+                            "trust_delta": 0.1
+                        }
+                    if alt_tag and tag_num < 6:
+                        choices["2"] = {
+                            "text": "Take a different approach to the challenge",
+                            "next": alt_tag,
+                            "trust_delta": 0.1
+                        }
+                    elif tag_num >= 6:
+                        # For later nodes, create choices leading to conclusions
+                        choices["1"] = {
+                            "text": "Face the final challenge with courage",
+                            "next": f"tag_{8:03d}",
+                            "trust_delta": 0.2
+                        }
+                        choices["2"] = {
+                            "text": "Seek wisdom before the final confrontation", 
+                            "next": f"tag_{9:03d}",
+                            "trust_delta": 0.15
+                        }
+                    
+                    story_dict[tag] = {
+                        "text": f"Your journey continues as new challenges and discoveries await. Each step forward brings you closer to your ultimate destiny, testing your resolve and revealing hidden strengths.",
+                        "choices": choices,
+                        "media": {"images": [], "audio": []},
+                        "npcs_present": []
+                    }
+                else:
+                    # Create conclusion nodes for tag_008 and beyond
+                    story_dict[tag] = {
+                        "text": f"Your epic adventure reaches its triumphant conclusion. Through courage, wisdom, and determination, you have overcome all obstacles and achieved your goal. Your heroic deeds will be remembered for generations to come. The End.",
+                        "choices": {},
+                        "media": {"images": [], "audio": []},
+                        "npcs_present": []
+                    }
         else:
             added = False
     print(f"[patch_story_tree] Final story keys: {list(story_dict.keys())}")
@@ -457,6 +623,21 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     scene = tree.get(req.sceneTag)
     if scene is None:
         raise HTTPException(404, f"Scene '{req.sceneTag}' not found")
+    
+    # Get player_id from soulSeedId for NPC profile creation
+    profiles = _read_json(str(DATA_FILE), {})
+    player_id = ""
+    for pid, profile in profiles.items():
+        if profile.get("soulSeedId") == req.soulSeedId:
+            player_id = pid
+            break
+    
+    # Ensure NPC profiles exist for all NPCs in the scene
+    if player_id and scene:
+        try:
+            ensure_npc_profile(scene, player_id)
+        except Exception as e:
+            print(f"[main] Failed to ensure NPC profiles in _choose_py: {e}")
 
     str_key_map = {str(k): v["next"] for k, v in scene.get("choices", {}).items()}
     key = str(req.choice_val)
@@ -510,6 +691,152 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
         except Exception as e:
             print(f"[main] NPC trust update failed: {e}")
     # --- END NPC trust delta integration ---
+
+    # --- NPC Onboarding integration with Conditions ---
+    print(f"🔍 [main] Starting NPC onboarding integration for soulSeedId={req.soulSeedId}", flush=True)
+    try:
+        # Check if npc_onboard is present in choice
+        if isinstance(choice_obj, dict) and "npc_onboard" in choice_obj:
+            npc_onboard_id = choice_obj.get("npc_onboard")
+            if npc_onboard_id and player_id:
+                print(f"🟢 [main] Attempting to onboard NPC: {npc_onboard_id} for player: {player_id}", flush=True)
+                
+                # Import here to avoid circular imports
+                from backend.npc.service import onboard_npc
+                from backend.db import SessionLocal
+                from backend.story_conditions import validate_choice_conditions
+                
+                db = SessionLocal()
+                try:
+                    # Check if choice has conditions that must be validated
+                    conditions = choice_obj.get("conditions", {})
+                    
+                    # Always add anti-duplicate condition for onboarding
+                    if "not_companion" not in conditions:
+                        conditions["not_companion"] = True
+                    
+                    if conditions:
+                        print(f"🔍 [main] Validating onboarding conditions: {conditions}", flush=True)
+                        is_valid, reason = validate_choice_conditions(conditions, player_id, npc_onboard_id, db)
+                        
+                        if not is_valid:
+                            print(f"❌ [main] Onboarding conditions not met: {reason}", flush=True)
+                            # Store condition failure for potential UI feedback
+                            story_data["last_condition_failure"] = {
+                                "npc_id": npc_onboard_id,
+                                "reason": reason,
+                                "scene_tag": req.sceneTag
+                            }
+                            # Continue without onboarding, but don't fail the choice
+                        else:
+                            print(f"✅ [main] Onboarding conditions validated: {reason}", flush=True)
+                            onboarded_npc = onboard_npc(player_id, npc_onboard_id, db)
+                            print(f"✅ [main] Successfully onboarded {onboarded_npc.name} (ID: {onboarded_npc.id}) as companion", flush=True)
+                            
+                            # Generate recruitment dialogue
+                            try:
+                                from codex.npc.recruitment_dialogue import generate_recruitment_dialogue
+                                from backend.npc.service import get_trust_scores
+                                
+                                trust_scores = get_trust_scores(player_id, db)
+                                npc_trust = trust_scores.get(npc_onboard_id, 0.5)
+                                context = "emergency" if conditions.get("trust", 1.0) < 0.4 else None
+                                
+                                # Try to get NPC personality from story metadata
+                                npc_personality = None
+                                npc_metadata = tree.get("_npc_metadata", {})
+                                for npc_data in npc_metadata.values():
+                                    if npc_data.get("uuid") == npc_onboard_id:
+                                        npc_personality = npc_data.get("personality")
+                                        break
+                                
+                                recruitment_dialogue = generate_recruitment_dialogue(
+                                    npc_onboard_id, 
+                                    onboarded_npc.name, 
+                                    npc_trust, 
+                                    context,
+                                    npc_personality
+                                )
+                                
+                                # Store recruitment dialogue for scene response
+                                story_data.setdefault("recruitment_dialogue", []).append({
+                                    "npc_id": npc_onboard_id,
+                                    "npc_name": onboarded_npc.name,
+                                    "dialogue": recruitment_dialogue,
+                                    "scene_tag": req.sceneTag
+                                })
+                                
+                                print(f"🎭 [main] Generated recruitment dialogue: {recruitment_dialogue}", flush=True)
+                                
+                            except Exception as e:
+                                print(f"⚠️ [main] Failed to generate recruitment dialogue: {e}", flush=True)
+                            
+                            # Log onboarding event for memory recap
+                            story_data.setdefault("onboarding_events", []).append({
+                                "npc_id": npc_onboard_id,
+                                "npc_name": onboarded_npc.name,
+                                "scene_tag": req.sceneTag,
+                                "timestamp": datetime.utcnow().isoformat()
+                            })
+                    else:
+                        # No conditions to validate, proceed with onboarding
+                        onboarded_npc = onboard_npc(player_id, npc_onboard_id, db)
+                        print(f"✅ [main] Successfully onboarded {onboarded_npc.name} (ID: {onboarded_npc.id}) as companion", flush=True)
+                        
+                        # Generate recruitment dialogue
+                        try:
+                            from codex.npc.recruitment_dialogue import generate_recruitment_dialogue
+                            from backend.npc.service import get_trust_scores
+                            
+                            trust_scores = get_trust_scores(player_id, db)
+                            npc_trust = trust_scores.get(npc_onboard_id, 0.5)
+                            
+                            # Try to get NPC personality from story metadata
+                            npc_personality = None
+                            npc_metadata = tree.get("_npc_metadata", {})
+                            for npc_data in npc_metadata.values():
+                                if npc_data.get("uuid") == npc_onboard_id:
+                                    npc_personality = npc_data.get("personality")
+                                    break
+                            
+                            recruitment_dialogue = generate_recruitment_dialogue(
+                                npc_onboard_id, 
+                                onboarded_npc.name, 
+                                npc_trust,
+                                None,  # No emergency context
+                                npc_personality
+                            )
+                            
+                            # Store recruitment dialogue for scene response
+                            story_data.setdefault("recruitment_dialogue", []).append({
+                                "npc_id": npc_onboard_id,
+                                "npc_name": onboarded_npc.name,
+                                "dialogue": recruitment_dialogue,
+                                "scene_tag": req.sceneTag
+                            })
+                            
+                            print(f"🎭 [main] Generated recruitment dialogue: {recruitment_dialogue}", flush=True)
+                            
+                        except Exception as e:
+                            print(f"⚠️ [main] Failed to generate recruitment dialogue: {e}", flush=True)
+                        
+                        # Log onboarding event for memory recap
+                        story_data.setdefault("onboarding_events", []).append({
+                            "npc_id": npc_onboard_id,
+                            "npc_name": onboarded_npc.name,
+                            "scene_tag": req.sceneTag,
+                            "timestamp": datetime.utcnow().isoformat() 
+                        })
+                        
+                finally:
+                    db.close()
+            elif not player_id:
+                print(f"⚠️ [main] Cannot onboard NPC {npc_onboard_id}: no player_id found", flush=True)
+    except Exception as e:
+        print(f"⚠️ [main] NPC onboarding failed: {e}", flush=True)
+        import traceback
+        print(f"⚠️ [main] NPC onboarding traceback: {traceback.format_exc()}", flush=True)
+    # --- END NPC Onboarding integration ---
 
     # --- Emotion delta integration ---
     print(f"🔍 [main] Starting emotion integration for soulSeedId={req.soulSeedId}", flush=True)
@@ -605,7 +932,7 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     # --- END Soulmap delta integration ---
 
     print(f"🟢 [main] Returning response for soulSeedId={req.soulSeedId}, nextTag={next_tag}", flush=True)
-    return _scene_to_response(next_tag, tree, player_id=player_id)
+    return _scene_to_response(next_tag, tree, player_id=player_id, story_data=story_data)
 
 # ────────────────────────────── choice endpoint ──────────────────────────────
 @app.post("/choice", response_model=SceneResponse)
@@ -709,8 +1036,8 @@ def api_memory(player_id: str):
         return {"recap": "No memory recap available for this player yet."}
     story = story_data.get("tree", {})
     history = story_data.get("history", [])
-    # Use the enhanced codex memory system
-    recap = codex_update_memory(player_id, story, history)
+    # Use the enhanced codex memory system with story_data for onboarding events
+    recap = codex_update_memory(player_id, story, history, story_data)
     if not recap:
         recap = "No memory recap available for this player yet."
     return {"recap": recap}

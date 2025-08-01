@@ -13,6 +13,9 @@ You are updating the PurposePath backend (FastAPI) for two features:
    • Create `trust.py` with TrustManager class (load/save json, update(score))
    • Integrate TrustManager into main.py play_scene()
 
+NPC Profile Generation Rule:
+• Whenever you introduce a speaking character not seen before, include a npc_profile block with id, name, recruitable flag, and default trust.
+
 Coding constraints:
 * Keep code Python 3.12, FastAPI style.
 * Pass tests in tests/test_backend.py.
