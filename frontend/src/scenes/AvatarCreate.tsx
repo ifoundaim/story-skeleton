@@ -1,118 +1,148 @@
 // frontend/src/scenes/AvatarCreate.tsx
-import { useState, FormEvent } from 'react'
-import { useNavigate }          from 'react-router-dom'
-import { motion }               from 'framer-motion'
-import { useAvatar }            from '../AvatarContext'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
+import { useNavigate }         from 'react-router-dom'
+import { motion }              from 'framer-motion'
+import axios                   from 'axios'
 
-/* ———————————————————————— types ———————————————————————— */
+import { useAvatar } from '../AvatarContext'
+import { useSeed   } from '../SeedContext'
+
 interface SoulSeedRes {
-  playerId:    string
-  soulSeedId:  string
+  playerId:     string
+  soulSeedId:   string
   initSceneTag: string
 }
 
-/* ———————————————————————— component ———————————————————————— */
-export default function AvatarCreate () {
-  const navigate              = useNavigate()
-  const { setAvatarUrl }      = useAvatar()
+export default function AvatarCreate() {
+  const nav              = useNavigate()
+  const { setAvatarUrl } = useAvatar()
+  const { hasSeed, setSeed } = useSeed()
 
-  const [name,        setName]        = useState('')
-  const [preset,      setPreset]      = useState('Visionary Dreamer')
-  const [custom,      setCustom]      = useState('')
-  const [file,        setFile]        = useState<File | null>(null)
-  const [preview,     setPreview]     = useState<string>('')
-  const [errorMsg,    setErrorMsg]    = useState('')
+  const [name,    setName]    = useState('')
+  const [preset,  setPreset]  = useState('Visionary Dreamer')
+  const [custom,  setCustom]  = useState('')
+  const [file,    setFile]    = useState<File | null>(null)
+  const [preview, setPreview] = useState('')
+  const [err,     setErr]     = useState('')
+  const [busy,    setBusy]    = useState(false)
 
-  /* — uploads — */
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (!f) return
-    setFile(f)
-    setPreview(URL.createObjectURL(f))
+    if (f) {
+      setFile(f)
+      setPreview(URL.createObjectURL(f))
+    }
   }
 
-  /* — submit — */
-  const handleSubmit = async (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    setErrorMsg('')
+    setErr('')
+    setBusy(true)
 
-    if (!name.trim())          { setErrorMsg('Name required');    return }
-    if (!preset && !custom)    { setErrorMsg('Pick an archetype'); return }
-
-    /* 1 / create soul-seed profile */
-    let res: Response
-    try {
-      res = await fetch('/soulseed', {
-        method : 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body   : JSON.stringify({
-          playerName     : name.trim(),
-          archetypePreset: preset,
-          archetypeCustom: custom.trim() || null
-        })
-      })
-    } catch { setErrorMsg('Network error'); return }
-
-    if (!res.ok) {
-      setErrorMsg('Could not create profile')
+    // 1) Validation
+    if (!name.trim()) {
+      setErr('Name is required')
+      setBusy(false)
       return
     }
-    const data: SoulSeedRes = await res.json()
-    localStorage.setItem('soulSeedId', data.soulSeedId)
-    localStorage.setItem('playerId',   data.playerId)
-
-    /* 2 / upload avatar (optional) */
-    let avatarURL = ''
-    if (file) {
-      const fd = new FormData()
-      fd.append('playerId', data.playerId)
-      fd.append('file', file)
-      try {
-        const r = await fetch('/avatar/upload', { method:'POST', body: fd })
-        if (r.ok) {
-          const j = await r.json(); avatarURL = j.url
-          localStorage.setItem('avatarUrl', avatarURL)
-          setAvatarUrl(avatarURL)
-        }
-      } catch {/* ignore upload failure */}
+    if (!preset && !custom.trim()) {
+      setErr('Pick or describe an archetype')
+      setBusy(false)
+      return
     }
 
-    /* 3 / go to story */
-    navigate('/scene')
+    /* 2 ─ create soul-seed */
+    let seed: SoulSeedRes
+    try {
+      console.log('📤 POST /soulseed', {
+        playerName:       name.trim(),
+        archetypePreset:  preset,
+        archetypeCustom:  custom.trim() || null,
+        avatarReferenceUrl: null,
+      })
+      const { data } = await axios.post<SoulSeedRes>(
+        '/soulseed',
+        {
+          playerName       : name.trim(),
+          archetypePreset  : preset,
+          archetypeCustom  : custom.trim() || null,
+          avatarReferenceUrl: null,
+        }
+      )
+      seed = data
+      console.log('✅ soul-seed response:', data)
+
+      // —– persist into localStorage (so SceneView can read them) —–
+      localStorage.setItem('playerId',     seed.playerId)
+      localStorage.setItem('soulSeedId',   seed.soulSeedId)
+      localStorage.setItem('initSceneTag', seed.initSceneTag)
+
+      // —– flip your React context + localStorage flag —–
+      setSeed(seed.soulSeedId)
+      console.log('▶ hasSeed in context now:', hasSeed)
+    } catch (err) {
+      console.error('❌ soul-seed creation failed:', err)
+      setErr('Failed to create profile, please retry.')
+      setBusy(false)
+      return
+    }
+
+    /* 3 ─ avatar upload (optional) */
+    if (file) {
+      const fd = new FormData()
+      fd.append('playerId', seed.playerId)
+      fd.append('file', file)
+
+      try {
+        console.log('📤 uploading avatar file…', file)
+        const resp = await axios.post<{ url: string }>(
+          '/avatar/upload',
+          fd,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+        console.log('✅ upload response:', resp.data)
+        setAvatarUrl(resp.data.url)
+        localStorage.setItem('avatarUrl', resp.data.url)
+      } catch (uploadErr) {
+        console.error('❌ avatar upload failed:', uploadErr)
+        // don't block the flow on upload failure
+      }
+    }
+
+    /* 4 ─ ritual step */
+    nav('/ritual', { replace: true })
   }
 
-  /* ———————————————————————— render ———————————————————————— */
   return (
     <motion.div
       initial={{ opacity:0, y:10 }}
       animate={{ opacity:1, y:0 }}
       exit={{ opacity:0, y:-10 }}
-      transition={{ duration:0.4 }}
+      transition={{ duration:0.35 }}
       className="max-w-xl mx-auto p-8 space-y-6"
     >
       <h1 className="text-2xl font-semibold text-center">Avatar Creation</h1>
 
-      {/* form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-
-        {/* name */}
-        <div className="space-y-1">
-          <label className="block font-medium">Name</label>
+      <form onSubmit={onSubmit} className="space-y-4">
+        {/* Name */}
+        <div>
+          <label className="block mb-1 font-medium">Name</label>
           <input
-            type="text"
-            value={name}
-            onChange={e=>setName(e.target.value)}
             className="w-full px-3 py-2 border rounded"
+            placeholder="Your name"
+            value={name}
+            onChange={e => setName(e.target.value)}
           />
         </div>
 
-        {/* archetype preset */}
-        <div className="space-y-1">
-          <label className="block font-medium">Choose an archetype</label>
+        {/* Preset */}
+        <div>
+          <label className="block mb-1 font-medium">Choose an archetype</label>
           <select
-            value={preset}
-            onChange={e=>setPreset(e.target.value)}
             className="w-full px-3 py-2 border rounded"
+            value={preset}
+            onChange={e => setPreset(e.target.value)}
           >
             <option>Visionary Dreamer</option>
             <option>Stoic Guardian</option>
@@ -121,45 +151,42 @@ export default function AvatarCreate () {
           </select>
         </div>
 
-        {/* custom archetype */}
-        <div className="space-y-1">
-          <label className="block font-medium">
+        {/* Custom */}
+        <div>
+          <label className="block mb-1 font-medium">
             Describe your own archetype (optional)
           </label>
           <textarea
             rows={3}
-            value={custom}
-            onChange={e=>setCustom(e.target.value)}
             className="w-full px-3 py-2 border rounded"
+            value={custom}
+            onChange={e => setCustom(e.target.value)}
           />
         </div>
 
-        {/* avatar file */}
-        <div className="space-y-1">
-          <label className="block font-medium">Avatar image</label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFile}
-          />
+        {/* Upload */}
+        <div>
+          <label className="block mb-1 font-medium">Avatar image (optional)</label>
+          <input type="file" accept="image/*" onChange={onFile} />
           {preview && (
             <img
               src={preview}
-              alt="preview"
               className="w-24 h-24 rounded-full mt-2 object-cover"
             />
           )}
         </div>
 
-        {/* error */}
-        {errorMsg && <p className="text-red-600">{errorMsg}</p>}
+        {err && <p className="text-red-600">{err}</p>}
 
-        {/* submit */}
         <button
-          type="submit"
-          className="w-full py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
+          disabled={busy}
+          className={`w-full py-2 text-white rounded shadow ${
+            busy
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700'
+          }`}
         >
-          Confirm Avatar
+          {busy ? 'Creating…' : 'Confirm Avatar'}
         </button>
       </form>
     </motion.div>

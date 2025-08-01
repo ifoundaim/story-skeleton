@@ -1,12 +1,7 @@
 {
-  "aim": {
-    "playerName": "aim",
-    "archetype": "hero for God",
-    "soulSeedId": "5c532466e26a"
-  },
-  "hero": {
-    "playerName": "hero",
-    "archetype": "hymn",
-    "soulSeedId": "6e6a13d439a6"
+  "frank": {
+    "playerName": "Frank",
+    "archetype": "monk",
+    "soulSeedId": "76732d528988"
   }
 }

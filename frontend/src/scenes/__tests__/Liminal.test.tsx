@@ -3,17 +3,24 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Liminal from '../Liminal';
 
-it('cycles ASK -> SEEK -> KNOCK', async () => {
+it('collects inputs through the ritual phases', async () => {
   const user = userEvent.setup();
   render(
     <MemoryRouter>
       <Liminal />
     </MemoryRouter>
   );
-  const word = () => screen.getByText(/ASK|SEEK|KNOCK/);
-  expect(word()).toHaveTextContent('ASK');
-  await user.click(word());
-  expect(word()).toHaveTextContent('SEEK');
-  await user.click(word());
-  expect(word()).toHaveTextContent('KNOCK');
+  const phase = () => screen.getByText(/ASK|SEEK|KNOCK/);
+  const input = () => screen.getByRole('textbox');
+  const button = () => screen.getByRole('button');
+
+  expect(phase()).toHaveTextContent('ASK');
+  await user.type(input(), 'a');
+  await user.click(button());
+
+  expect(phase()).toHaveTextContent('SEEK');
+  await user.type(input(), 'b');
+  await user.click(button());
+
+  expect(phase()).toHaveTextContent('KNOCK');
 });

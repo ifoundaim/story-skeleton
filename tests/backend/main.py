@@ -7,7 +7,7 @@ profile.  The older health-check route remains for backwards
 compatibility so existing tests continue to pass.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, constr
 from pathlib import Path
@@ -56,6 +56,12 @@ def slugify(value: str) -> str:
     return slug
 
 
+def make_soulSeedId(player_name: str, archetype: str) -> str:
+    """Deterministic short hash for tests."""
+    seed = f"{player_name}|{archetype}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:12]
+
+
 class PlayerProfileIn(BaseModel):
     playerName: constr(strip_whitespace=True, min_length=1)
     archetypePreset: str
@@ -89,11 +95,17 @@ def create_player_profile(request: PlayerProfileIn) -> SoulSeedResponse:
     )
 
 
+@app.post("/avatar/upload")
+async def avatar_upload(playerId: str = Form(...), file: UploadFile = File(...)) -> dict[str, str]:
+    dest_dir = Path("uploads") / playerId
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"orig_001{Path(file.filename).suffix}"
+    dest.write_bytes(await file.read())
+    return {"url": f"/static/{playerId}/{dest.name}"}
+
+
 def import_main():
     """
     Helper the tests call.
 
-    Returning the FastAPI instance keeps them happy while the real
-    implementation is built in later sprints.
-    """
-    return app
+    Returning the Fas

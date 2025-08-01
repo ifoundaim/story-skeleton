@@ -1,14 +1,93 @@
-version: "3.9"
-
 services:
+  # ───────────────────────┐
+  #        DATABASE        │
+  # ───────────────────────┤
+  db:
+    image: ankane/pgvector:latest        # includes Postgres + pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB:       purposepath
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+
+  # ───────────────────────┐
+  #          API           │
+  # ───────────────────────┤
   api:
-    build: .
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env              # ← pulls in POSTGRES_URL, OPENAI_API_KEY, etc.
+    environment:
+      - SYNC_MEDIA_GENERATION=true
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --env-file .env
     ports:
       - "8000:8000"
+    networks:
+      - app-net
 
+  # ───────────────────────┐
+  #         FRONTEND       │
+  # ───────────────────────┤
   web:
-    build: ./frontend
+    build:
+      context: ./frontend     # ← your React/Vite app
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    environment:
+      VITE_BACKEND: "http://api:8000"
+    depends_on:
+      - api
     command: npm run dev -- --host
     ports:
       - "5173:5173"
+    networks:
+      - app-net
+    volumes:
+      - ./frontend:/app
+
+# ───────────────────────┐
+  #         MINIO          │
+  # ───────────────────────┤
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data
+    volumes:
+      - ./minio-data:/data
+
+# ───────────────────────┐
+#   VOLUMES & NETWORK    │
+# ───────────────────────┤
+volumes:
+  dbdata:
+  minio-data:
+
+networks:
+  app-net:
+    driver: bridge

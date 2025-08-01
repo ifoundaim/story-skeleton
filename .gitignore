@@ -1,3 +1,16 @@
 .env
 backend/.env
 /tests/__pycache__/
+
+# Python cache and build artefacts
+__pycache__/
+backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+node_modules
+node_modules
+
+# Ignore MinIO system files
+minio-data/
+minio-data-backup-*/
+minio-data/.minio.sys/

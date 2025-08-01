@@ -1,48 +1,279 @@
 {
   "intro_001": {
-    "text": "You are standing at a crossroad. Where do you want to go?",
+    "text": "You are standing at a crossroad in an ancient forest. Two paths diverge before you - one leads toward a mysterious cave shrouded in mist, the other toward the sound of flowing water. Where do you want to go?",
     "choices": {
       "1": "mysterious_cave",
       "2": "peaceful_river"
+    },
+    "media": {
+      "images": [],
+      "audio": []
     }
-  },
-  "dark_forest": {
-    "text": "You walk into the dark forest and feel the trees close around you. You hear a strange noise.",
-    "choices": {
-      "1": "investigate_noise",
-      "2": "run_away"
-    }
-  },
-  "sunny_meadow": {
-    "text": "You head into the sunny meadow, the warm sun on your skin. You see a river sparkling in the distance.",
-    "choices": {
-      "1": "go_to_river",
-      "2": "lie_down"
-    }
-  },
-  "investigate_noise": {
-    "text": "You move toward the noise and discover a hidden treasure chest! The End."
-  },
-  "run_away": {
-    "text": "You run away safely but always wonder what you missed. The End."
-  },
-  "go_to_river": {
-    "text": "You sit by the river and find peace in the sound of water. The End."
-  },
-  "lie_down": {
-    "text": "You lie down in the meadow and fall into a deep, restful sleep. The End."
-  },
-  "peaceful_river": {
-    "text": "You follow the path to a peaceful river. The sound of running water calms your spirit. The End."
   },
   "mysterious_cave": {
-    "text": "You venture into a mysterious cave. The air is damp and echoes with distant sounds.",
+    "text": "You venture into the mysterious cave. The air grows cooler as you descend, and strange phosphorescent moss illuminates the walls. You hear the echo of dripping water and... something else. A low, rhythmic sound like breathing.",
     "choices": {
-      "1": "investigate_noise",
-      "2": "run_away"
+      "1": "follow_breathing_sound",
+      "2": "explore_side_tunnel"
+    },
+    "media": {
+      "images": [],
+      "audio": []
     }
   },
-  "secret_cave": {
-    "text": "You discover a hidden cave glittering with ancient crystals. The air hums with power!"
+  "peaceful_river": {
+    "text": "You follow the path to a peaceful river. The sound of running water calms your spirit, but as you approach, you notice something unusual - an old wooden boat tied to a dock, and across the river, smoke rising from what appears to be a hidden village.",
+    "choices": {
+      "1": "take_the_boat",
+      "2": "follow_river_downstream"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "follow_breathing_sound": {
+    "text": "You creep deeper into the cave, following the mysterious sound. The passage opens into a vast chamber where a massive, ancient dragon lies sleeping atop a pile of gold and artifacts. Its breathing creates the sound you heard. What do you do?",
+    "choices": {
+      "1": "attempt_to_take_treasure",
+      "2": "try_to_communicate"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "explore_side_tunnel": {
+    "text": "You choose the narrower side tunnel. It leads upward, and soon you emerge onto a hidden plateau with a spectacular view of the valley below. Here stands an ancient stone circle, and in its center, a shimmering portal of blue light.",
+    "choices": {
+      "1": "enter_the_portal",
+      "2": "study_the_stone_circle"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "take_the_boat": {
+    "text": "You untie the boat and row across the river. The hidden village is indeed real - a community of friendly forest dwellers who welcome you warmly. Their leader, an elderly woman with kind eyes, tells you of a great threat approaching their lands.",
+    "choices": {
+      "1": "offer_to_help_village",
+      "2": "ask_about_the_threat"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "follow_river_downstream": {
+    "text": "You walk along the riverbank as it winds through the forest. The water leads you to a beautiful waterfall cascading into a crystal-clear pool. Behind the waterfall, you glimpse what appears to be a hidden cave entrance.",
+    "choices": {
+      "1": "swim_to_hidden_cave",
+      "2": "rest_by_the_pool"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "attempt_to_take_treasure": {
+    "text": "You carefully reach for a golden chalice near the edge of the treasure pile. The dragon's eye suddenly opens, ancient and wise. Instead of anger, you see curiosity. The dragon speaks in a voice like distant thunder: 'Bold, but foolish. I offer you a choice - take one item and leave, or stay and hear my tale of sorrow.'",
+    "choices": {
+      "1": "take_treasure_and_leave",
+      "2": "stay_and_listen"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "try_to_communicate": {
+    "text": "You call out softly to the dragon. It awakens and regards you with ancient, intelligent eyes. 'Few have shown such respect,' it rumbles. 'I am the last guardian of this realm's secrets. A great darkness stirs in the north, and I am too old to face it alone.'",
+    "choices": {
+      "1": "volunteer_to_help_dragon",
+      "2": "ask_about_the_darkness"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "enter_the_portal": {
+    "text": "You step through the shimmering portal and find yourself in a realm of eternal twilight. Before you lies a vast library with floating books and a robed figure who turns to greet you. 'Welcome, traveler. You have found the Archive of All Knowledge. What wisdom do you seek?'",
+    "choices": {
+      "1": "ask_about_your_destiny",
+      "2": "request_knowledge_of_magic"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "study_the_stone_circle": {
+    "text": "You examine the ancient stones carefully. Each is carved with symbols that seem to shift and change as you look at them. As you touch one stone, visions flash through your mind - you see the history of this place, ancient battles, and a prophecy about a chosen one who will restore balance to the world.",
+    "choices": {
+      "1": "embrace_the_prophecy",
+      "2": "seek_more_understanding"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "offer_to_help_village": {
+    "text": "The villagers are grateful for your offer. They equip you with ancient weapons and a map showing the path to the Shadow Realm, where dark creatures have been emerging. As you prepare to leave, a young villager offers to accompany you on your dangerous quest.",
+    "choices": {
+      "1": "accept_companion_and_depart",
+      "2": "go_alone_to_protect_them"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "ask_about_the_threat": {
+    "text": "The village elder explains that an ancient evil has awakened in the Shadow Realm. Dark creatures pour forth each night, and their influence corrupts the forest. She reveals that you bear the mark of the chosen one - a birthmark on your hand that glows faintly in her presence.",
+    "choices": {
+      "1": "accept_your_destiny",
+      "2": "doubt_the_prophecy"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "swim_to_hidden_cave": {
+    "text": "You swim through the cool water and slip behind the waterfall. The hidden cave is filled with ancient murals depicting a great battle between light and shadow. At the cave's end, you find a pedestal holding a sword that pulses with inner light - the legendary Blade of Dawn.",
+    "choices": {
+      "1": "claim_the_legendary_sword",
+      "2": "leave_the_sword_untouched"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "rest_by_the_pool": {
+    "text": "You rest by the tranquil pool, feeling its healing energy restore your strength. In the still water, you see visions of possible futures - some dark, some bright. A voice whispers in your mind: 'The path you choose will determine not just your fate, but the fate of all.'",
+    "choices": {
+      "1": "choose_the_path_of_light",
+      "2": "embrace_the_unknown_path"
+    },
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "take_treasure_and_leave": {
+    "text": "You take the golden chalice and leave the cave. As you emerge into daylight, you realize the chalice has the power to heal any wound and cure any poison. Your adventure ends with you becoming a renowned healer, using the dragon's gift to help others. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "stay_and_listen": {
+    "text": "The dragon shares its tale of loss and duty. Moved by its story, you vow to help restore what was lost. The dragon grants you its blessing and a scale that will protect you from any harm. You become the dragon's champion, wielding great power to protect the innocent. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "volunteer_to_help_dragon": {
+    "text": "The dragon is pleased by your courage. It teaches you ancient magic and grants you a portion of its power. Together, you face the darkness and emerge victorious, becoming the new guardian of the realm. Your legend echoes through the ages. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "ask_about_the_darkness": {
+    "text": "The dragon reveals that the darkness is a corruption from another realm that seeks to devour all light and life. Armed with this knowledge, you dedicate your life to learning how to combat this threat, eventually becoming a scholar-warrior who saves countless lives. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "ask_about_your_destiny": {
+    "text": "The keeper of the Archive reveals that you are destined to be the bridge between worlds, bringing peace to ancient conflicts. With this knowledge, you return to your world transformed, using your wisdom to unite divided peoples and usher in an age of harmony. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "request_knowledge_of_magic": {
+    "text": "The keeper teaches you the fundamental laws of magic and the responsibility that comes with such power. You return to your world as a wise mage, using your knowledge to protect the innocent and maintain the balance between magic and the mundane world. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "embrace_the_prophecy": {
+    "text": "You accept your role as the chosen one. The stones imbue you with ancient power and wisdom. You become the prophesied hero who will restore balance to the world, embarking on a grand quest that will be remembered for generations. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "seek_more_understanding": {
+    "text": "Your cautious approach proves wise. You spend time learning from the ancient stones, gaining deep understanding rather than just power. You become a wise teacher who guides future generations, ensuring the prophecy will be fulfilled when the time is truly right. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "accept_companion_and_depart": {
+    "text": "With your brave companion by your side, you face the Shadow Realm and overcome its challenges through teamwork and mutual support. Together, you banish the darkness and return as heroes. Your friendship becomes legendary, inspiring others to work together. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "go_alone_to_protect_them": {
+    "text": "Your selfless choice to go alone demonstrates true heroism. Though the path is difficult, your noble heart and determination see you through. You defeat the shadow threat single-handedly and return to find the village safe, having proven that sometimes the greatest strength comes from protecting others. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "accept_your_destiny": {
+    "text": "Embracing your destiny, you become the village's champion. With their blessing and ancient weapons, you venture forth to face the darkness. Your acceptance of responsibility leads to victory over the ancient evil, and you become a legend sung about for centuries. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "doubt_the_prophecy": {
+    "text": "Your healthy skepticism leads you to forge your own path rather than blindly following prophecy. This independent approach proves successful as you find unique solutions to the crisis that no prophecy could have predicted. You save the day through ingenuity rather than destiny. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "claim_the_legendary_sword": {
+    "text": "The Blade of Dawn accepts you as its wielder, filling you with the power of pure light. With this legendary weapon, you become an unstoppable force against darkness, cleansing corruption wherever you find it. Your name becomes synonymous with hope and justice. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "leave_the_sword_untouched": {
+    "text": "Your respect for the sword's power and wisdom in not claiming it prematurely proves that you are truly worthy. The blade's spirit follows you invisibly, protecting and guiding you. You become a humble hero whose greatest power comes from knowing when not to use power. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "choose_the_path_of_light": {
+    "text": "Choosing the path of light, you dedicate your life to bringing hope and healing to the world. Your selfless actions inspire others to follow your example, creating a ripple effect of positive change that transforms the entire realm into a place of peace and prosperity. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
+  },
+  "embrace_the_unknown_path": {
+    "text": "By embracing uncertainty, you discover that the greatest adventures come from stepping into the unknown. Your willingness to explore uncharted territories leads to discoveries that benefit all, and you become known as the great explorer who opened new frontiers of possibility. The End.",
+    "media": {
+      "images": [],
+      "audio": []
+    }
   }
 }
