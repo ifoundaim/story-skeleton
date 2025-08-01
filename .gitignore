@@ -14,3 +14,4 @@ node_modules
 minio-data/
 minio-data-backup-*/
 minio-data/.minio.sys/
+backend/test.db
