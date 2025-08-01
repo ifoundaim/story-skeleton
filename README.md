@@ -4,6 +4,49 @@
 
 ## 🎯 Recent Sprint Completions
 
+### ✅ Soul Map v2 Sprint (SM02) - COMPLETED
+**Unify on 64-Dimensional Vector System**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Canonical 64-trait enum with organized trait categories
+  - Unified 64-dimensional vector system replacing fragmented approaches
+  - Database model with pgvector integration and proper indexing
+  - Service layer with CRUD operations and delta clipping
+  - FastAPI router with RESTful endpoints
+  - Main app integration and story engine updates
+  - Comprehensive test suite with numpy float precision handling
+  - Legacy high-level soulmap service deprecation
+
+**Technical Implementation:**
+- **Core Mapping:** `backend/soulmap/mapping.py` - 64-trait enum and vector utilities
+- **Database Model:** `backend/soulmap/db.py` - SoulMap model with pgvector column
+- **Service Layer:** `backend/soulmap/service.py` - Business logic with delta clipping
+- **API Router:** `backend/soulmap/router.py` - REST endpoints for soulmap operations
+- **Main Integration:** `backend/main.py` - Soulmap delta processing in choice system
+- **Story Engine:** `story/engine.py` - Updated HTTP calls to new endpoints
+- **Migration:** `backend/migrations/versions/sm02_update_soulmap_table.py` - Database schema
+- **Testing:** `backend/tests/test_soulmap_v2.py` - Comprehensive integration tests
+- **Legacy Cleanup:** Removed `soulmap/main.py` and old utility files
+
+**64 Trait Categories:**
+- **Core Virtues** (0-7): COURAGE, COMPASSION, WISDOM, CREATIVITY, JUSTICE, TEMPERANCE, RESILIENCE, EMPATHY
+- **Shadow Traits** (8-15): FEAR, PRIDE, APATHY, SHADOW_BLEND_1-5
+- **Motivations** (16-23): SELFACTUALIZATION, EXTERNALVALIDATION, COLLECTIVE, MOTIVATION_BLEND_1-5
+- **Archetypes** (24-31): HERO, REBEL, SAGE, CAREGIVER, MAGICIAN, LOVER, SOVEREIGN, EXPLORER
+- **Archetype Blends** (32-39): ARCHETYPE_BLEND_1-8
+- **Cognitive Functions** (40-47): INTROVERTED/EXTRAVERTED variants of THINKING, FEELING, SENSING, INTUITING
+- **Attachment Styles** (48-51): SECURE, ANXIOUS, AVOIDANT, DISORGANIZED
+- **Psychological Needs** (52-59): AUTONOMY, COMPETENCE, RELATEDNESS, SELFCONTROL, MINDFULNESS, GRIT, CURIOSITY, PLAYFULNESS
+- **Social Traits** (60-63): OPTIMISM, VIGILANCE, SOCIALDOMINANCE, HUMILITY
+
+**API Endpoints:**
+- `GET /v1/soulmap/player/{player_id}` - Retrieve soulmap as trait dictionary
+- `PATCH /v1/soulmap/update` - Apply delta with `{player_id, delta:{trait:float}}`
+- `GET /v1/soulmap/health` - Health check endpoint
+
+---
+
 ### ✅ NPC Profile Helper Sprint (NPC02) - COMPLETED
 **Backend Safeguard for NPC Profile Creation**
 - **Status:** ✅ **COMPLETED** 
@@ -201,8 +244,9 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| GET | `/v1/soulmap/{playerId}` | Retrieve trait snapshot |
-| POST | `/v1/soulmap/delta` | Apply choice delta |
+| GET | `/v1/soulmap/player/{player_id}` | Retrieve trait dictionary |
+| PATCH | `/v1/soulmap/update` | Apply delta with trait dictionary |
+| GET | `/v1/soulmap/health` | Health check endpoint |
 
 ---
 
@@ -235,6 +279,7 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 | TR01   | `pnpm dev --filter ritual`  | Ritual UI @ `localhost:3001`      |
 | AV01   | `pnpm dev --filter avatar`  | Avatar Creator @ `localhost:3002` |
 | SM01   | `pnpm dev --filter soulmap` | Soul Map API @ `localhost:8000`   |
+| SM02   | `python -m backend.main`    | Soul Map v2 API @ `localhost:8000`   |
 | ST01   | `pnpm dev --filter story`   | Story Engine @ `localhost:8001`   |
 | MEDIA01| `pnpm dev --filter media`   | Media Generator @ `localhost:8002`|
 | CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |

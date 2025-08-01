@@ -890,32 +890,87 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     # --- END Emotion delta integration ---
 
     # --- Soulmap delta integration ---
-    if player_id and isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
+    if player_id and isinstance(choice_obj, dict):
         try:
             from backend.soulmap.service import apply_delta
             from backend.db import SessionLocal
             
-            db = SessionLocal()
-            try:
-                # Convert list delta to dict format for new service
-                raw_delta = choice_obj["soulmap_delta"]
-                if isinstance(raw_delta, list) and len(raw_delta) == 64:
-                    # Convert to trait dictionary format
-                    from backend.soulmap.mapping import SoulTrait
-                    delta_dict = {}
-                    for trait in SoulTrait:
-                        if trait.value < len(raw_delta):
-                            delta_dict[trait.name] = float(raw_delta[trait.value])
+            # Check if soulmap_delta is provided
+            if "soulmap_delta" in choice_obj:
+                db = SessionLocal()
+                try:
+                    # Convert list delta to dict format for new service
+                    raw_delta = choice_obj["soulmap_delta"]
+                    if isinstance(raw_delta, list) and len(raw_delta) == 64:
+                        # Convert to trait dictionary format
+                        from backend.soulmap.mapping import SoulTrait
+                        delta_dict = {}
+                        for trait in SoulTrait:
+                            if trait.value < len(raw_delta):
+                                delta_dict[trait.name] = float(raw_delta[trait.value])
+                        
+                        # Apply delta using new service
+                        apply_delta(db, player_id, delta_dict)
+                        print(f"✅ [main] Updated soulmap for player={player_id} with provided delta", flush=True)
+                    else:
+                        print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
+                finally:
+                    db.close()
+            else:
+                # No soulmap_delta provided, trigger inference
+                print(f"🧠 [main] No soulmap_delta provided, triggering inference for player={player_id}", flush=True)
+                
+                # Get choice text
+                choice_text = choice_obj.get("text", "")
+                
+                # Get scene text from current scene
+                scene_text = ""
+                if scene_tag in tree:
+                    scene_data = tree[scene_tag]
+                    scene_text = scene_data.get("description", "")
+                
+                # Get current emotion state
+                emotion_state = {}
+                try:
+                    from emotion.models import get_emotion_state
+                    emotion_state = get_emotion_state(player_id)
+                except Exception as e:
+                    print(f"⚠️ [main] Could not get emotion state: {e}", flush=True)
+                
+                # Get NPC trust levels
+                trust_levels = {}
+                try:
+                    from npc.service import get_npc_states
+                    npc_states = get_npc_states(player_id)
+                    trust_levels = {npc.name: npc.trust for npc in npc_states if hasattr(npc, 'trust')}
+                except Exception as e:
+                    print(f"⚠️ [main] Could not get NPC trust levels: {e}", flush=True)
+                
+                # Get memory recap
+                memory_recap = ""
+                try:
+                    from codex.memory import get_memory_recap
+                    memory_recap = get_memory_recap(player_id)
+                except Exception as e:
+                    print(f"⚠️ [main] Could not get memory recap: {e}", flush=True)
+                
+                # Enqueue soulmap inference task
+                try:
+                    from purpose_agents.codex_router import codex_router
+                    task_id = await codex_router.enqueue_soulmap_inference(
+                        player_id=player_id,
+                        choice_text=choice_text,
+                        scene_text=scene_text,
+                        emotion_state=emotion_state,
+                        trust_levels=trust_levels,
+                        memory_recap=memory_recap
+                    )
+                    print(f"🧠 [main] Enqueued soulmap inference task {task_id} for player={player_id}", flush=True)
+                except Exception as e:
+                    print(f"❌ [main] Failed to enqueue soulmap inference: {e}", flush=True)
                     
-                    # Apply delta using new service
-                    apply_delta(db, player_id, delta_dict)
-                    print(f"✅ [main] Updated soulmap for player={player_id}", flush=True)
-                else:
-                    print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
-            finally:
-                db.close()
         except Exception as e:
-            print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
+            print(f"⚠️ [main] Soulmap integration failed for player={player_id}: {e}", flush=True)
     # --- END Soulmap delta integration ---
 
     print(f"🟢 [main] Returning response for soulSeedId={req.soulSeedId}, nextTag={next_tag}", flush=True)
@@ -973,6 +1028,23 @@ def get_media_result(task_id: str) -> dict[str, Any]:
     result = codex_router.get_task_result(task_id)
     if result:
         return result.dict()
+    else:
+        raise HTTPException(404, "Task not found or not completed")
+
+
+@app.get("/soulmap/inference/status/{task_id}")
+def get_soulmap_inference_status(task_id: str) -> dict[str, str]:
+    """Get the status of a soulmap inference task"""
+    status = codex_router.get_task_status(task_id)
+    return {"task_id": task_id, "status": status.value if status else "not_found"}
+
+
+@app.get("/soulmap/inference/result/{task_id}")
+def get_soulmap_inference_result(task_id: str) -> dict[str, Any]:
+    """Get the result of a completed soulmap inference task"""
+    result = codex_router.get_soulmap_task_result(task_id)
+    if result:
+        return {"task_id": task_id, "delta": result}
     else:
         raise HTTPException(404, "Task not found or not completed")
 

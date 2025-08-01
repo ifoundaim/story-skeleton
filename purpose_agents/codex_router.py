@@ -16,6 +16,7 @@ import sys
 
 from media.models import MediaAssets, SceneMedia, MediaGenerationRequest
 from media.generator import media_generator
+from codex.tasks.soulmap_infer import soulmap_infer
 
 
 class TaskStatus(Enum):
@@ -40,13 +41,31 @@ class MediaTask:
     error_message: Optional[str] = None
 
 
+@dataclass
+class SoulmapInferenceTask:
+    """Soulmap delta inference task"""
+    task_id: str
+    player_id: str
+    choice_text: str
+    scene_text: str
+    emotion_state: Dict[str, float]
+    trust_levels: Dict[str, float]
+    memory_recap: str
+    status: TaskStatus
+    result: Optional[Dict[str, float]] = None
+    error_message: Optional[str] = None
+
+
 class CodexRouter:
-    """Codex router for media generation tasks"""
+    """Codex router for media generation and soulmap inference tasks"""
     
     def __init__(self):
-        self.tasks: Dict[str, MediaTask] = {}
-        self.task_queue: List[str] = []
-        self.is_processing = False
+        self.media_tasks: Dict[str, MediaTask] = {}
+        self.soulmap_tasks: Dict[str, SoulmapInferenceTask] = {}
+        self.media_queue: List[str] = []
+        self.soulmap_queue: List[str] = []
+        self.is_processing_media = False
+        self.is_processing_soulmap = False
         
     async def enqueue_media_generation(self, scene_tag: str, scene_text: str, 
                                      theme: str, player_id: str,
@@ -66,7 +85,7 @@ class CodexRouter:
             generate_audio=generate_audio,
             status=TaskStatus.PENDING
         )
-        self.tasks[task_id] = task
+        self.media_tasks[task_id] = task
         if sync_mode:
             try:
                 print(f"[DEBUG] Synchronous media generation for {task_id}")
@@ -88,25 +107,55 @@ class CodexRouter:
                 task.status = TaskStatus.FAILED
                 task.error_message = str(e)
         else:
-            self.task_queue.append(task_id)
+            self.media_queue.append(task_id)
             # Start processing if not already running
-            if not self.is_processing:
-                asyncio.create_task(self._process_queue())
+            if not self.is_processing_media:
+                asyncio.create_task(self._process_media_queue())
             print(f"📋 [codex] Enqueued media task {task_id} for scene {scene_tag}")
         return task_id
     
-    async def _process_queue(self):
-        """Process the task queue"""
-        print("[DEBUG] _process_queue started")
-        self.is_processing = True
+    async def enqueue_soulmap_inference(
+        self,
+        player_id: str,
+        choice_text: str,
+        scene_text: str,
+        emotion_state: Dict[str, float],
+        trust_levels: Dict[str, float],
+        memory_recap: str
+    ) -> str:
+        """Enqueue a soulmap delta inference task"""
+        task_id = f"soulmap_{player_id}_{int(asyncio.get_event_loop().time())}"
+        task = SoulmapInferenceTask(
+            task_id=task_id,
+            player_id=player_id,
+            choice_text=choice_text,
+            scene_text=scene_text,
+            emotion_state=emotion_state,
+            trust_levels=trust_levels,
+            memory_recap=memory_recap,
+            status=TaskStatus.PENDING
+        )
+        self.soulmap_tasks[task_id] = task
+        self.soulmap_queue.append(task_id)
         
-        while self.task_queue:
-            print(f"[DEBUG] Task queue: {self.task_queue}")
-            task_id = self.task_queue.pop(0)
-            task = self.tasks.get(task_id)
+        # Start processing if not already running
+        if not self.is_processing_soulmap:
+            asyncio.create_task(self._process_soulmap_queue())
+        
+        print(f"🧠 [codex] Enqueued soulmap inference task {task_id} for player {player_id}")
+        return task_id
+    
+    async def _process_media_queue(self):
+        """Process the media task queue"""
+        print("[DEBUG] _process_media_queue started")
+        self.is_processing_media = True
+        
+        while self.media_queue:
+            task_id = self.media_queue.pop(0)
+            task = self.media_tasks.get(task_id)
             
             if not task:
-                print(f"[DEBUG] No task found for task_id={task_id}")
+                print(f"[DEBUG] No media task found for task_id={task_id}")
                 continue
             
             try:
@@ -137,24 +186,78 @@ class CodexRouter:
                 task.status = TaskStatus.FAILED
                 task.error_message = str(e)
         
-        self.is_processing = False
-        print("[DEBUG] _process_queue finished")
+        self.is_processing_media = False
+        print("[DEBUG] _process_media_queue finished")
+    
+    async def _process_soulmap_queue(self):
+        """Process the soulmap inference task queue"""
+        print("[DEBUG] _process_soulmap_queue started")
+        self.is_processing_soulmap = True
+        
+        while self.soulmap_queue:
+            task_id = self.soulmap_queue.pop(0)
+            task = self.soulmap_tasks.get(task_id)
+            
+            if not task:
+                print(f"[DEBUG] No soulmap task found for task_id={task_id}")
+                continue
+            
+            try:
+                print(f"🧠 [codex] Processing soulmap inference task {task_id}")
+                task.status = TaskStatus.IN_PROGRESS
+                
+                # Call the soulmap inference task
+                result = await soulmap_infer.infer_soulmap_delta(
+                    choice_text=task.choice_text,
+                    scene_text=task.scene_text,
+                    emotion_state=task.emotion_state,
+                    trust_levels=task.trust_levels,
+                    memory_recap=task.memory_recap,
+                    player_id=task.player_id
+                )
+                
+                task.result = result
+                task.status = TaskStatus.COMPLETED
+                
+                print(f"✅ [codex] Completed soulmap inference task {task_id}: {result}")
+                
+            except Exception as e:
+                print(f"❌ [codex] Failed soulmap inference task {task_id}: {e}")
+                task.status = TaskStatus.FAILED
+                task.error_message = str(e)
+        
+        self.is_processing_soulmap = False
+        print("[DEBUG] _process_soulmap_queue finished")
     
     def get_task_status(self, task_id: str) -> Optional[TaskStatus]:
         """Get the status of a task"""
-        task = self.tasks.get(task_id)
-        return task.status if task else None
+        # Check media tasks first
+        task = self.media_tasks.get(task_id)
+        if task:
+            return task.status
+        
+        # Check soulmap tasks
+        task = self.soulmap_tasks.get(task_id)
+        if task:
+            return task.status
+        
+        return None
     
     def get_task_result(self, task_id: str) -> Optional[SceneMedia]:
-        """Get the result of a completed task"""
-        task = self.tasks.get(task_id)
+        """Get the result of a completed media task"""
+        task = self.media_tasks.get(task_id)
+        return task.result if task and task.status == TaskStatus.COMPLETED else None
+    
+    def get_soulmap_task_result(self, task_id: str) -> Optional[Dict[str, float]]:
+        """Get the result of a completed soulmap inference task"""
+        task = self.soulmap_tasks.get(task_id)
         return task.result if task and task.status == TaskStatus.COMPLETED else None
     
     def check_scene_media(self, scene_tag: str, player_id: str) -> Optional[SceneMedia]:
         """Check if media exists for a scene"""
         print(f"[DEBUG] check_scene_media called for scene_tag={scene_tag}, player_id={player_id}")
         # Look for completed tasks for this scene
-        for task in self.tasks.values():
+        for task in self.media_tasks.values():
             if (task.scene_tag == scene_tag and 
                 task.player_id == player_id and 
                 task.status == TaskStatus.COMPLETED):
