@@ -4,6 +4,35 @@
 
 ## 🎯 Recent Sprint Completions
 
+### ✅ NPC Profile Helper Sprint (NPC02) - COMPLETED
+**Backend Safeguard for NPC Profile Creation**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Automatic NPC profile creation for all NPCs referenced in scenes
+  - Support for both explicit `npc_profile` blocks and `npcs_present` fallback
+  - Integration in `/start` endpoint and `_choose_py` function
+  - Generator instruction for consistent NPC profile blocks
+  - Comprehensive unit tests for profile creation logic
+  - Idempotent operation (safe to call multiple times)
+
+**Technical Implementation:**
+- **Core Helper:** `backend/npc/profile_seed.py` - `ensure_npc_profile()` function
+- **Integration:** `backend/main.py` - Helper calls in story endpoints
+- **Generator Rules:** `purpose_agents/agent_backend.py` - NPC profile instruction
+- **Testing:** `backend/tests/test_profile_seed.py` - Comprehensive test suite
+- **Database:** Uses existing NPC service functions for profile creation
+- **Backward Compatibility:** Works with existing `npcs_present` arrays
+
+**Profile Helper Features:**
+- **Automatic Detection:** Scans scenes for NPC references in multiple formats
+- **Profile Creation:** Creates minimal NPC profiles with default values
+- **Metadata Support:** Handles recruitable flags and default trust values
+- **Error Handling:** Graceful handling of invalid data and database errors
+- **Generator Integration:** Ensures consistent NPC profile blocks in new stories
+
+---
+
 ### ✅ Soulmap Integration Sprint (SM01) - COMPLETED
 **Player Choice Data Capture & Real-time Soulmap Updates**
 - **Status:** ✅ **COMPLETED** 
@@ -164,6 +193,7 @@ A modular, AI‑driven narrative platform that synthesises avatars, stories, and
 | `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
 | `/codex/memory/` | Memory system    | MEM01  | Recap builder + persistence |
 | `/backend/npc/` | NPC Trust system  | NPC01  | Trust tracking + API      |
+| `/backend/npc/profile_seed.py` | NPC Profile Helper | NPC02  | Automatic profile creation |
 | `/backend/emotion/` | Emotion engine | EMO01  | 8D emotion vectors        |
 | `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
 
