@@ -38,7 +38,6 @@ import ritual
 from purpose_agents.generate_story import generate_story
 from purpose_agents.codex_router import codex_router
 print(f"[DEBUG] codex_router id at import: {id(codex_router)}")
-# import soulmap
 from npc import router as npc_router
 from npc.profile_seed import ensure_npc_profile
 from repository_router import router as repository_router
@@ -49,6 +48,7 @@ from purpose_agents.tasks import recap_builder
 from codex.memory import update_memory as codex_update_memory
 from codex.npc import generate_npc_dialogue
 from codex.npc.group_dialogue import generate_group_dialogue, format_dialogue_for_scene
+from soulmap import router as soulmap_router
 
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
@@ -58,7 +58,7 @@ EDITOR_FILE = BASE_DIR / "editor.html"
 UPLOADS_DIR = BASE_DIR.parent / "uploads"
 
 app = FastAPI(title="SoulSeed API")
-# # app.include_router(soulmap.router, prefix='/soulmap')
+app.include_router(soulmap_router, prefix='/v1')
 app.include_router(npc_router, prefix='/npc')
 app.include_router(repository_router, prefix='/repository')
 app.include_router(emotion_router, prefix='')
@@ -890,45 +890,32 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     # --- END Emotion delta integration ---
 
     # --- Soulmap delta integration ---
-    # print(f"🔍 [main] About to check soulmap integration, player_id: '{player_id}'", flush=True)
-    # if player_id:
-#         try:
-#             # from soulmap.models import SoulMap
-#             # from soulmap.vector_utils import clip_vector, add_vectors
-#             from db import SessionLocal
-#             db = SessionLocal()
-#             
-#             # Get current soulmap vector
-#             row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
-#             current_vector = list(row.vector) if row else [0.0] * 64
-#             
-#             # Debug: Log choice_obj structure
-#             print(f"🔍 [main] choice_obj keys: {list(choice_obj.keys()) if isinstance(choice_obj, dict) else 'not a dict'}", flush=True)
-#             print(f"🔍 [main] choice_obj: {choice_obj}", flush=True)
-#             
-#             # Get soulmap_delta from choice_obj
-#             soulmap_delta = [0.0] * 64
-#             if isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
-#                 raw_delta = choice_obj["soulmap_delta"]
-#                 if isinstance(raw_delta, list) and len(raw_delta) == 64:
-#                     soulmap_delta = [float(x) for x in raw_delta]
-#                     print(f"✅ [main] Found soulmap_delta: {soulmap_delta[:3]}...", flush=True)
-#                 else:
-#                     print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
-#             else:
-#                 print(f"⚠️ [main] No soulmap_delta found in choice_obj", flush=True)
-#             
-#             # Apply delta and clip
-#             new_vector = clip_vector(add_vectors(current_vector, soulmap_delta))
-#             
-#             # Save new soulmap entry
-#             new_row = SoulMap(player_id=player_id, vector=new_vector)
-#             db.add(new_row)
-#             db.commit()
-#             db.close()
-#             print(f"✅ [main] Updated soulmap for player={player_id}, delta={soulmap_delta[:3]}...", flush=True)
-#         except Exception as e:
-#             print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
+    if player_id and isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
+        try:
+            from backend.soulmap.service import apply_delta
+            from backend.db import SessionLocal
+            
+            db = SessionLocal()
+            try:
+                # Convert list delta to dict format for new service
+                raw_delta = choice_obj["soulmap_delta"]
+                if isinstance(raw_delta, list) and len(raw_delta) == 64:
+                    # Convert to trait dictionary format
+                    from backend.soulmap.mapping import SoulTrait
+                    delta_dict = {}
+                    for trait in SoulTrait:
+                        if trait.value < len(raw_delta):
+                            delta_dict[trait.name] = float(raw_delta[trait.value])
+                    
+                    # Apply delta using new service
+                    apply_delta(db, player_id, delta_dict)
+                    print(f"✅ [main] Updated soulmap for player={player_id}", flush=True)
+                else:
+                    print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
     # --- END Soulmap delta integration ---
 
     print(f"🟢 [main] Returning response for soulSeedId={req.soulSeedId}, nextTag={next_tag}", flush=True)
