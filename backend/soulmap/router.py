@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from typing import List
-from .models import SoulMap
-from .vector_utils import clip_vector, add_vectors
-import numpy as np
-import uuid
-from db import SessionLocal
+from typing import Dict
+from pydantic import BaseModel
+from .service import get_soulmap_dict, apply_delta
+from .db import SessionLocal
 
 def get_db():
     db = SessionLocal()
@@ -16,28 +14,40 @@ def get_db():
 
 router = APIRouter()
 
-VECTOR_SIZE = 64
+class SoulMapUpdateRequest(BaseModel):
+    player_id: str
+    delta: Dict[str, float]
 
-def zero_vector():
-    return [0.0] * VECTOR_SIZE
-
-@router.get('/player/{player_id}')
+@router.get('/soulmap/player/{player_id}')
 def get_soulmap(player_id: str, db: Session = Depends(get_db)):
-    row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
-    if row:
-        return {'player_id': player_id, 'vector': [float(x) for x in row.vector]}
-    return {'player_id': player_id, 'vector': zero_vector()}
+    """Get soulmap for a player as trait dictionary."""
+    try:
+        soulmap_dict = get_soulmap_dict(db, player_id)
+        return {
+            'player_id': player_id,
+            'traits': soulmap_dict,
+            'vector_size': 64
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get soulmap: {str(e)}")
 
-@router.post('/update')
-def update_soulmap(payload: dict, db: Session = Depends(get_db)):
-    player_id = payload.get('player_id')
-    delta = payload.get('delta')
-    if not player_id or not isinstance(delta, list) or len(delta) != VECTOR_SIZE:
-        raise HTTPException(400, 'Invalid payload')
-    row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
-    base = list(row.vector) if row else zero_vector()
-    new_vec = clip_vector(add_vectors(base, delta))
-    new_row = SoulMap(id=uuid.uuid4(), player_id=player_id, vector=new_vec)
-    db.add(new_row)
-    db.commit()
-    return {'player_id': player_id, 'vector': [float(x) for x in new_vec]} 
+@router.patch('/soulmap/update')
+def update_soulmap(request: SoulMapUpdateRequest, db: Session = Depends(get_db)):
+    """Update soulmap with delta values."""
+    try:
+        soulmap = apply_delta(db, request.player_id, request.delta)
+        updated_dict = get_soulmap_dict(db, request.player_id)
+        
+        return {
+            'player_id': request.player_id,
+            'traits': updated_dict,
+            'vector_size': 64,
+            'message': 'Soulmap updated successfully'
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update soulmap: {str(e)}")
+
+@router.get('/soulmap/health')
+def health_check():
+    """Health check endpoint."""
+    return {'status': 'healthy', 'service': 'soulmap-v2'} 

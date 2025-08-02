@@ -109,6 +109,11 @@ def log_choice(
     try:
         with httpx.Client(timeout=2) as client:
             client.post(f"{base_url}/story_choices", json=payload)
-            client.post(f"{base_url}/v1/soulmap/delta", json=delta)
+            # Update to use new soulmap endpoint
+            soulmap_payload = {
+                "player_id": player_id,
+                "delta": delta
+            }
+            client.patch(f"{base_url}/v1/soulmap/update", json=soulmap_payload)
     finally:
         print("checkpoint_choice", json.dumps(payload))

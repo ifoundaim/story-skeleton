@@ -18,7 +18,7 @@ import backend.soulmap.router as soulmap_router
 
 # Create tables in the test database
 from backend.npc.models import Base as NPCBase
-from backend.soulmap.models import Base as SoulMapBase
+from backend.soulmap.db import Base as SoulMapBase
 NPCBase.metadata.create_all(bind=backend.db.engine)
 SoulMapBase.metadata.create_all(bind=backend.db.engine)
 
@@ -51,7 +51,7 @@ def clean_db():
     # Delete all data from tables
     with backend.db.engine.connect() as conn:
         conn.execute(text("DELETE FROM npc_state"))
-        conn.execute(text("DELETE FROM soul_map"))
+        conn.execute(text("DELETE FROM soul_maps"))
         conn.commit()
 
 @pytest.fixture(scope="module")
