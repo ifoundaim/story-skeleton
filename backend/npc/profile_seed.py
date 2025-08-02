@@ -1,5 +1,5 @@
-from backend.npc.service import get_npc_by_id, create_default_npc
-from backend.db import SessionLocal
+from npc.service import get_npc_by_id, create_default_npc
+from db import SessionLocal
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 import uuid
