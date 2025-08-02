@@ -51,6 +51,10 @@ export default defineConfig(({ mode }) => {
           target: backend,
           changeOrigin: true,
         },
+        '/v1': {
+          target: backend,
+          changeOrigin: true,
+        },
       },
     },
   }

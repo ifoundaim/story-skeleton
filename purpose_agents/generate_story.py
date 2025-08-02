@@ -5,12 +5,25 @@ import os
 import random
 import json
 import re
+import logging
 try:
     from .codex_router import TASK_QUEUE, Task
 except ImportError:
     # Fallback for when codex module is not available
     TASK_QUEUE = None
     Task = None
+
+# Import story validator
+try:
+    from codex.validate import validate, auto_heal
+except ImportError:
+    # Fallback for when validation module is not available
+    def validate(tree):
+        return []
+    def auto_heal(tree, aggressive=False):
+        return tree
+
+logger = logging.getLogger(__name__)
 
 try:
     client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -253,7 +266,7 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
                         orin_uuid: -0.1  # Orin is more cautious
                     }
                     ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
-                    ch["soulmap_delta"] = [0.2, 0.1, 0, 0, 0, 0, 0, 0] + [0.0] * 56
+                    # Remove soulmap_delta - will be inferred when choice is made
                 elif (i == 0 and j == 1):
                     # Second choice - caution/wisdom
                     ch["npc_trust_deltas"] = {
@@ -261,14 +274,14 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
                         orin_uuid: 0.2    # Orin appreciates wisdom
                     }
                     ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
-                    ch["soulmap_delta"] = [-0.1, 0.2, 0.1, 0, 0, 0, 0, 0] + [0.0] * 56
+                    # Remove soulmap_delta - will be inferred when choice is made
                 elif (i == 1 and j == 0):
                     # Compassion/helping - affects present NPC
                     present_npcs = node.get("npcs_present", [])
                     if present_npcs:
                         ch["npc_trust_deltas"] = {present_npcs[0]: 0.3}
                     ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
-                    ch["soulmap_delta"] = [0, 0, 0.3, 0.2, 0, 0, 0, 0] + [0.0] * 56
+                    # Remove soulmap_delta - will be inferred when choice is made
                 elif (i == 2 and j == 0):
                     # Different NPC interaction
                     present_npcs = node.get("npcs_present", [])
@@ -296,6 +309,21 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
     if len(story_dict) < 8 or continuing_nodes < 6:
         print(f"DEBUG: Insufficient story structure, creating fallback 8-node structure")
         story_dict = create_fallback_8_node_story(theme, intent_vector, player_name)
+    
+    # --- VALIDATION & AUTO-HEALING ---
+    issues = validate(story_dict)
+    if issues:
+        logger.warning(f"Found {len(issues)} validation issues: {issues}")
+        story_dict = auto_heal(story_dict)
+        logger.info("Auto-healing completed")
+        
+        # Re-validate after healing
+        remaining_issues = validate(story_dict)
+        if remaining_issues:
+            logger.error(f"Critical issues remain after healing: {remaining_issues}")
+            # Only abort if intro_001 is missing or healing completely failed
+            if "intro_001" not in story_dict:
+                raise Exception("Critical: Missing intro_001 scene after healing")
     
     first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"
     print(f"DEBUG: story_dict keys: {list(story_dict.keys())}")

@@ -12,9 +12,8 @@ from dotenv import load_dotenv
 import os
 
 BASE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BASE_DIR.parent
-load_dotenv(REPO_ROOT / ".env.cursor", override=False)  # safe dummy values for Cursor
-load_dotenv(REPO_ROOT / ".env", override=True)           # your actual local secrets
+load_dotenv(BASE_DIR / ".env.cursor", override=False)  # safe dummy values for Cursor
+load_dotenv(BASE_DIR / ".env", override=True)           # your actual local secrets
 
 # 3️⃣ Standard lib
 from datetime import datetime
@@ -31,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, constr, ConfigDict
 
 # ─── Path patching for internal modules ────────────────────────────────────────
+REPO_ROOT = BASE_DIR.parent
 sys.path.insert(0, str(BASE_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -38,18 +38,8 @@ import ritual
 from purpose_agents.generate_story import generate_story
 from purpose_agents.codex_router import codex_router
 print(f"[DEBUG] codex_router id at import: {id(codex_router)}")
+# import soulmap
 from npc import router as npc_router
-
-# Import story validator
-try:
-    from codex.validate import validate, auto_heal
-except ImportError:
-    # Fallback for when validation module is not available
-    def validate(tree):
-        return []
-    def auto_heal(tree, aggressive=False):
-        return tree
-from npc.profile_seed import ensure_npc_profile
 from repository_router import router as repository_router
 from media.models import MediaAssets
 from emotion.router import router as emotion_router
@@ -57,8 +47,7 @@ from emotion.models import EMOTION_DIM, zero_emotion_vector, clip_emotion_vector
 from purpose_agents.tasks import recap_builder
 from codex.memory import update_memory as codex_update_memory
 from codex.npc import generate_npc_dialogue
-from codex.npc.npc_group_dialogue import generate_group_dialogue
-from soulmap import router as soulmap_router
+from codex.npc.group_dialogue import generate_group_dialogue, format_dialogue_for_scene
 
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
@@ -68,9 +57,7 @@ EDITOR_FILE = BASE_DIR / "editor.html"
 UPLOADS_DIR = BASE_DIR.parent / "uploads"
 
 app = FastAPI(title="SoulSeed API")
-
-
-app.include_router(soulmap_router, prefix="/v1")
+# # app.include_router(soulmap.router, prefix='/soulmap')
 app.include_router(npc_router, prefix='/npc')
 app.include_router(repository_router, prefix='/repository')
 app.include_router(emotion_router, prefix='')
@@ -81,14 +68,6 @@ if not os.environ.get("TESTING"):
     async def _init() -> None:
         print("🔧 [main] startup: initializing ritual subsystem")
         await ritual.setup()
-        
-        # Ensure soul map tables exist
-        try:
-            from soulmap.db import create_tables
-            create_tables()
-            print("✅ [main] startup: soul map tables created/verified")
-        except Exception as e:
-            print(f"⚠️ [main] startup: failed to create soul map tables: {e}")
 
 
 JSONDict = Dict[str, Any]
@@ -187,7 +166,6 @@ class SceneResponse(BaseModel):
     npc_text_dynamic: str | None = None
     npc_dialogue: list[dict[str, str]] = Field(default_factory=list)
     dialogue_type: str = "single"  # "single" or "group"
-    soulmap_delta: dict[str, float] | None = None
 
 SceneResponse.model_rebuild()
 
@@ -204,32 +182,28 @@ async def api_ritual(payload: RitualRequest) -> RitualResponse:
         payload.theme,
     )
 
-    # Load player profile to get player name and soulSeedId
-    profiles = _read_json(str(DATA_FILE), {})
-    player_name = None
-    soul_seed_id = None
-    for pid, profile in profiles.items():
-        if pid == payload.playerId:
-            player_name = profile.get("playerName", "Adventurer")  # Fallback name
-            soul_seed_id = profile.get("soulSeedId")
-            break
-    
-    if not soul_seed_id:
-        print(f"⚠️ [main] soulSeedId not found for playerId={payload.playerId}")
-        raise HTTPException(500, "Failed to find soulSeedId for player")
-
     try:
         # Ensure intentVector is a list of floats
         intent_vector = [float(x) for x in data["intentVector"]]
         first_tag, tree = await generate_story(
             payload.playerId,
-            player_name,  # Pass the actual player name
             str(data["theme"]),
             intent_vector,
         )
     except Exception as e:
         print(f"⚠️ [main] story generation failed: {e}")
         raise HTTPException(500, "Failed to generate story tree")
+
+    # Load player profile to get soulSeedId
+    profiles = _read_json(str(DATA_FILE), {})
+    soul_seed_id = None
+    for pid, profile in profiles.items():
+        if pid == payload.playerId:
+            soul_seed_id = profile.get("soulSeedId")
+            break
+    if not soul_seed_id:
+        print(f"⚠️ [main] soulSeedId not found for playerId={payload.playerId}")
+        raise HTTPException(500, "Failed to find soulSeedId for player")
 
     state = _read_json(str(STATE_FILE), {"stories": {}})
     if "stories" not in state:
@@ -319,7 +293,7 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
     )
 
 
-def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: Optional[Dict[str, Any]] = None, soulmap_delta: Optional[Dict[str, float]] = None) -> SceneResponse:
+def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: Optional[Dict[str, Any]] = None) -> SceneResponse:
     print(f"DEBUG: _scene_to_response called with tag={tag}, story keys={list(story.keys())}")
     if tag not in story:
         return SceneResponse(
@@ -396,8 +370,8 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 # If no npcs_present defined, check if there are active companions
                 if not npcs_present:
                     try:
-                        from npc.service import get_companions
-                        from db import SessionLocal
+                        from backend.npc.service import get_companions
+                        from backend.db import SessionLocal
                         db = SessionLocal()
                         companions = get_companions(player_id, db)
                         npcs_present = [comp.id for comp in companions[:3]]  # Limit to 3
@@ -410,9 +384,9 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 # Generate group dialogue if multiple NPCs present
                 if len(npcs_present) > 1:
                     try:
-                        from npc.service import get_trust_scores
-                        from emotion.service import get_emotion_vector
-                        from db import SessionLocal
+                        from backend.npc.service import get_trust_scores
+                        from backend.emotion.service import get_emotion_vector
+                        from backend.db import SessionLocal
                         
                         db = SessionLocal()
                         trust_scores = get_trust_scores(player_id, db)
@@ -480,8 +454,7 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
         media=media,
         npc_text_dynamic=npc_text_dynamic,
         npc_dialogue=npc_dialogue,
-        dialogue_type=dialogue_type,
-        soulmap_delta=soulmap_delta
+        dialogue_type=dialogue_type
     )
 
 # ───────────────────────── ritual endpoint ─────────────────────────────────
@@ -538,14 +511,6 @@ async def api_start(req: StartRequest) -> SceneResponse:
                     
             except Exception as e:
                 print(f"[main] Failed to synchronously generate media in /start: {e}")
-        
-        # Ensure NPC profiles exist for all NPCs in the scene
-        if player_id and current_scene:
-            try:
-                ensure_npc_profile(current_scene, player_id)
-            except Exception as e:
-                print(f"[main] Failed to ensure NPC profiles in /start: {e}")
-        
         return _scene_to_response(current_tag, st["tree"], player_id=player_id)
 
     print("⚠️ [main] falling back to static story.json")
@@ -553,7 +518,7 @@ async def api_start(req: StartRequest) -> SceneResponse:
     return _scene_to_response("intro_001", story, player_id="")
 
 
-def patch_story_tree(story_dict, player_name: str = "Adventurer"):
+def patch_story_tree(story_dict):
     """
     Recursively add all referenced tags as meaningful continuing nodes until all are present.
     This ensures stories continue for ~8 scenes before reaching conclusions.
@@ -615,7 +580,7 @@ def patch_story_tree(story_dict, player_name: str = "Adventurer"):
                         }
                     
                     story_dict[tag] = {
-                        "text": f"{player_name}, your journey continues as new challenges and discoveries await. Each step forward brings you closer to your ultimate destiny, testing your resolve and revealing hidden strengths.",
+                        "text": f"Your journey continues as new challenges and discoveries await. Each step forward brings you closer to your ultimate destiny, testing your resolve and revealing hidden strengths.",
                         "choices": choices,
                         "media": {"images": [], "audio": []},
                         "npcs_present": []
@@ -623,7 +588,7 @@ def patch_story_tree(story_dict, player_name: str = "Adventurer"):
                 else:
                     # Create conclusion nodes for tag_008 and beyond
                     story_dict[tag] = {
-                        "text": f"{player_name}, your epic adventure reaches its triumphant conclusion. Through courage, wisdom, and determination, you have overcome all obstacles and achieved your goal. Your heroic deeds will be remembered for generations to come. The End.",
+                        "text": f"Your epic adventure reaches its triumphant conclusion. Through courage, wisdom, and determination, you have overcome all obstacles and achieved your goal. Your heroic deeds will be remembered for generations to come. The End.",
                         "choices": {},
                         "media": {"images": [], "audio": []},
                         "npcs_present": []
@@ -642,30 +607,13 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     if story_data is None:
         raise HTTPException(404, "No story tree found for this player")
 
-    # Get player_id and player_name from soulSeedId for NPC profile creation
-    profiles = _read_json(str(DATA_FILE), {})
-    player_id = ""
-    player_name = "Adventurer"  # Default fallback
-    for pid, profile in profiles.items():
-        if profile.get("soulSeedId") == req.soulSeedId:
-            player_id = pid
-            player_name = profile.get("playerName", "Adventurer")
-            break
-    
     tree = story_data["tree"]
     if tree and isinstance(tree, dict):
-        tree = patch_story_tree(tree, player_name)
+        tree = patch_story_tree(tree)
         story_data["tree"] = tree
     scene = tree.get(req.sceneTag)
     if scene is None:
         raise HTTPException(404, f"Scene '{req.sceneTag}' not found")
-    
-    # Ensure NPC profiles exist for all NPCs in the scene
-    if player_id and scene:
-        try:
-            ensure_npc_profile(scene, player_id)
-        except Exception as e:
-            print(f"[main] Failed to ensure NPC profiles in _choose_py: {e}")
 
     str_key_map = {str(k): v["next"] for k, v in scene.get("choices", {}).items()}
     key = str(req.choice_val)
@@ -674,7 +622,7 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     next_tag = str_key_map[key]
     print(f"✅ [main] next sceneTag={next_tag}", flush=True)
     # Defensive patch again in case new tags are referenced
-    tree = patch_story_tree(tree, player_name)
+    tree = patch_story_tree(tree)
     story_data["tree"] = tree
     # Update state
     story_data["current"] = next_tag
@@ -730,9 +678,9 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
                 print(f"🟢 [main] Attempting to onboard NPC: {npc_onboard_id} for player: {player_id}", flush=True)
                 
                 # Import here to avoid circular imports
-                from npc.service import onboard_npc
-                from db import SessionLocal
-                from story_conditions import validate_choice_conditions
+                from backend.npc.service import onboard_npc
+                from backend.db import SessionLocal
+                from backend.story_conditions import validate_choice_conditions
                 
                 db = SessionLocal()
                 try:
@@ -764,7 +712,7 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
                             # Generate recruitment dialogue
                             try:
                                 from codex.npc.recruitment_dialogue import generate_recruitment_dialogue
-                                from npc.service import get_trust_scores
+                                from backend.npc.service import get_trust_scores
                                 
                                 trust_scores = get_trust_scores(player_id, db)
                                 npc_trust = trust_scores.get(npc_onboard_id, 0.5)
@@ -814,7 +762,7 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
                         # Generate recruitment dialogue
                         try:
                             from codex.npc.recruitment_dialogue import generate_recruitment_dialogue
-                            from npc.service import get_trust_scores
+                            from backend.npc.service import get_trust_scores
                             
                             trust_scores = get_trust_scores(player_id, db)
                             npc_trust = trust_scores.get(npc_onboard_id, 0.5)
@@ -918,110 +866,49 @@ async def _choose_py(req: ChoiceRequest) -> SceneResponse:
     # --- END Emotion delta integration ---
 
     # --- Soulmap delta integration ---
-    soulmap_delta = None
-    if player_id and isinstance(choice_obj, dict):
-        try:
-            from soulmap.service import apply_delta
-            from db import SessionLocal
-            
-            # Check if soulmap_delta is provided
-            if "soulmap_delta" in choice_obj:
-                db = SessionLocal()
-                try:
-                    # Convert list delta to dict format for new service
-                    raw_delta = choice_obj["soulmap_delta"]
-                    if isinstance(raw_delta, list) and len(raw_delta) == 64:
-                        # Convert to trait dictionary format
-                        from soulmap.mapping import SoulTrait
-                        delta_dict = {}
-                        for trait in SoulTrait:
-                            if trait.value < len(raw_delta):
-                                delta_dict[trait.name] = float(raw_delta[trait.value])
-                        
-                        # Store delta for response
-                        soulmap_delta = delta_dict
-                        
-                        # Apply delta using new service
-                        apply_delta(db, player_id, delta_dict)
-                        print(f"✅ [main] Updated soulmap for player={player_id} with provided delta", flush=True)
-                    else:
-                        print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
-                finally:
-                    db.close()
-            else:
-                # No soulmap_delta provided, trigger inference
-                print(f"🧠 [main] No soulmap_delta provided, triggering inference for player={player_id}", flush=True)
-                
-                # Get choice text
-                choice_text = choice_obj.get("text", "")
-                
-                # Get scene text from current scene
-                scene_text = ""
-                if req.sceneTag in tree:
-                    scene_data = tree[req.sceneTag]
-                    scene_text = scene_data.get("text", "")
-                
-                # Get current emotion state
-                emotion_state = {}
-                try:
-                    from emotion.models import get_emotion_state
-                    emotion_state = get_emotion_state(player_id)
-                except Exception as e:
-                    print(f"⚠️ [main] Could not get emotion state: {e}", flush=True)
-                
-                # Get NPC trust levels
-                trust_levels = {}
-                try:
-                    from npc.service import get_npc_states
-                    npc_states = get_npc_states(player_id)
-                    trust_levels = {npc.name: npc.trust for npc in npc_states if hasattr(npc, 'trust')}
-                except Exception as e:
-                    print(f"⚠️ [main] Could not get NPC trust levels: {e}", flush=True)
-                
-                # Get memory recap
-                memory_recap = ""
-                try:
-                    from codex.memory import get_memory_recap
-                    memory_recap = get_memory_recap(player_id)
-                except Exception as e:
-                    print(f"⚠️ [main] Could not get memory recap: {e}", flush=True)
-                
-                # Enqueue soulmap inference task and wait for result
-                try:
-                    from purpose_agents.codex_router import codex_router
-                    task_id = await codex_router.enqueue_soulmap_inference(
-                        player_id=player_id,
-                        choice_text=choice_text,
-                        scene_text=scene_text,
-                        emotion_state=emotion_state,
-                        trust_levels=trust_levels,
-                        memory_recap=memory_recap
-                    )
-                    print(f"🧠 [main] Enqueued soulmap inference task {task_id} for player={player_id}", flush=True)
-                    # Wait for the inference to complete and get the result
-                    import asyncio
-                    max_wait = 10  # Maximum wait time in seconds
-                    wait_time = 0
-                    while wait_time < max_wait:
-                        result = codex_router.get_soulmap_task_result(task_id)
-                        if result and isinstance(result, dict):
-                            soulmap_delta = result
-                            print(f"✅ [main] Got soulmap delta from inference: {soulmap_delta}", flush=True)
-                            break
-                        await asyncio.sleep(0.5)
-                        wait_time += 0.5
-                        print(f"🧠 [main] Waiting for soulmap inference... ({wait_time}s)", flush=True)
-                    if wait_time >= max_wait:
-                        print(f"⚠️ [main] Soulmap inference timeout for player={player_id}", flush=True)
-                except Exception as e:
-                    print(f"❌ [main] Failed to enqueue soulmap inference: {e}", flush=True)
-                    
-        except Exception as e:
-            print(f"⚠️ [main] Soulmap integration failed for player={player_id}: {e}", flush=True)
+    # print(f"🔍 [main] About to check soulmap integration, player_id: '{player_id}'", flush=True)
+    # if player_id:
+#         try:
+#             # from soulmap.models import SoulMap
+#             # from soulmap.vector_utils import clip_vector, add_vectors
+#             from db import SessionLocal
+#             db = SessionLocal()
+#             
+#             # Get current soulmap vector
+#             row = db.query(SoulMap).filter_by(player_id=player_id).order_by(SoulMap.updated_at.desc()).first()
+#             current_vector = list(row.vector) if row else [0.0] * 64
+#             
+#             # Debug: Log choice_obj structure
+#             print(f"🔍 [main] choice_obj keys: {list(choice_obj.keys()) if isinstance(choice_obj, dict) else 'not a dict'}", flush=True)
+#             print(f"🔍 [main] choice_obj: {choice_obj}", flush=True)
+#             
+#             # Get soulmap_delta from choice_obj
+#             soulmap_delta = [0.0] * 64
+#             if isinstance(choice_obj, dict) and "soulmap_delta" in choice_obj:
+#                 raw_delta = choice_obj["soulmap_delta"]
+#                 if isinstance(raw_delta, list) and len(raw_delta) == 64:
+#                     soulmap_delta = [float(x) for x in raw_delta]
+#                     print(f"✅ [main] Found soulmap_delta: {soulmap_delta[:3]}...", flush=True)
+#                 else:
+#                     print(f"⚠️ [main] soulmap_delta wrong format: {type(raw_delta)}, length: {len(raw_delta) if isinstance(raw_delta, list) else 'N/A'}", flush=True)
+#             else:
+#                 print(f"⚠️ [main] No soulmap_delta found in choice_obj", flush=True)
+#             
+#             # Apply delta and clip
+#             new_vector = clip_vector(add_vectors(current_vector, soulmap_delta))
+#             
+#             # Save new soulmap entry
+#             new_row = SoulMap(player_id=player_id, vector=new_vector)
+#             db.add(new_row)
+#             db.commit()
+#             db.close()
+#             print(f"✅ [main] Updated soulmap for player={player_id}, delta={soulmap_delta[:3]}...", flush=True)
+#         except Exception as e:
+#             print(f"⚠️ [main] Soulmap update failed for player={player_id}: {e}", flush=True)
     # --- END Soulmap delta integration ---
 
     print(f"🟢 [main] Returning response for soulSeedId={req.soulSeedId}, nextTag={next_tag}", flush=True)
-    return _scene_to_response(next_tag, tree, player_id=player_id, story_data=story_data, soulmap_delta=soulmap_delta)
+    return _scene_to_response(next_tag, tree, player_id=player_id, story_data=story_data)
 
 # ────────────────────────────── choice endpoint ──────────────────────────────
 @app.post("/choice", response_model=SceneResponse)
@@ -1075,23 +962,6 @@ def get_media_result(task_id: str) -> dict[str, Any]:
     result = codex_router.get_task_result(task_id)
     if result:
         return result.dict()
-    else:
-        raise HTTPException(404, "Task not found or not completed")
-
-
-@app.get("/soulmap/inference/status/{task_id}")
-def get_soulmap_inference_status(task_id: str) -> dict[str, str]:
-    """Get the status of a soulmap inference task"""
-    status = codex_router.get_task_status(task_id)
-    return {"task_id": task_id, "status": status.value if status else "not_found"}
-
-
-@app.get("/soulmap/inference/result/{task_id}")
-def get_soulmap_inference_result(task_id: str) -> dict[str, Any]:
-    """Get the result of a completed soulmap inference task"""
-    result = codex_router.get_soulmap_task_result(task_id)
-    if result:
-        return {"task_id": task_id, "delta": result}
     else:
         raise HTTPException(404, "Task not found or not completed")
 
@@ -1171,18 +1041,4 @@ def test_npc_dialogue(player_id: str):
 @app.get("/test-simple")
 def test_simple():
     return {"message": "Test endpoint working"}
-
-# ─────────────────────────────── Validation Endpoint ───────────────────────────────
-@app.post("/validate")
-def api_validate(tree: dict) -> dict[str, list[str]]:
-    """
-    Validate a story tree and return any issues found.
-    This is a development-only endpoint for testing story validation.
-    """
-    issues = validate(tree)
-    return {"issues": issues}
-
-
-
-
 

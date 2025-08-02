@@ -3,6 +3,7 @@ import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Responsi
 
 interface SoulMapWidgetProps {
   playerId: string | null;
+  refreshKey?: number; // Add this to trigger refreshes
 }
 
 interface SoulMapData {
@@ -24,18 +25,18 @@ const SOUL_TRAIT_CATEGORIES = {
   'Social Traits': ['OPTIMISM', 'VIGILANCE', 'SOCIALDOMINANCE', 'HUMILITY']
 };
 
-// Convert vector to traits dictionary
-const vectorToTraits = (vector: number[]): Record<string, number> => {
-  const traits: Record<string, number> = {};
-  Object.values(SOUL_TRAIT_CATEGORIES).flat().forEach((trait, index) => {
-    if (index < vector.length) {
-      traits[trait] = vector[index];
-    }
-  });
-  return traits;
-};
+// Convert vector to traits dictionary (unused but kept for potential future use)
+// const vectorToTraits = (vector: number[]): Record<string, number> => {
+//   const traits: Record<string, number> = {};
+//   Object.values(SOUL_TRAIT_CATEGORIES).flat().forEach((trait, index) => {
+//     if (index < vector.length) {
+//       traits[trait] = vector[index];
+//     }
+//   });
+//   return traits;
+// };
 
-const SoulMapWidget: React.FC<SoulMapWidgetProps> = ({ playerId }: SoulMapWidgetProps) => {
+const SoulMapWidget: React.FC<SoulMapWidgetProps> = ({ playerId, refreshKey }: SoulMapWidgetProps) => {
   const [soulMapData, setSoulMapData] = useState<SoulMapData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('Core Virtues');
@@ -44,26 +45,34 @@ const SoulMapWidget: React.FC<SoulMapWidgetProps> = ({ playerId }: SoulMapWidget
   console.log('SoulMapWidget playerId:', playerId);
 
   useEffect(() => {
-    console.log('SoulMapWidget useEffect, playerId:', playerId);
+    console.log('SoulMapWidget useEffect, playerId:', playerId, 'refreshKey:', refreshKey);
     if (!playerId) {
       setError('No playerId');
       return;
     }
-    // Use the working endpoint for now
-    fetch(`/soulmap/player/${playerId}`)
-      .then(res => res.json())
+    // Use the working test endpoint
+    fetch(`/v1/soulmap/player/${playerId}`)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      })
       .then(data => {
-        // Convert vector to traits format
-        const traits = vectorToTraits(data.vector || []);
+        console.log('SoulMapWidget received data:', data);
+        // The backend returns traits directly, not a vector
         setSoulMapData({
           player_id: data.player_id,
-          traits,
-          vector_size: data.vector?.length || 64
+          traits: data.traits || {},
+          vector_size: data.vector_size || 64
         });
         setError(null);
       })
-      .catch(() => setError('Could not load soul map.'));
-  }, [playerId]);
+      .catch((err) => {
+        console.error('SoulMapWidget fetch error:', err);
+        setError(`Could not load soul map: ${err.message}`);
+      });
+  }, [playerId, refreshKey]); // Add refreshKey to dependencies
 
   // Prepare radar chart data for selected category
   const getRadarData = () => {

@@ -219,6 +219,40 @@ class CodexRouter:
                 task.result = result
                 task.status = TaskStatus.COMPLETED
                 
+                # 🧠 CRITICAL: Automatically apply the inference result to the database
+                if result:
+                    try:
+                        print(f"🧠 [codex] Attempting to apply soulmap delta for player={task.player_id}: {result}")
+                        
+                        # Import here to avoid circular imports
+                        import sys
+                        import os
+                        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+                        
+                        from soulmap.service import apply_delta
+                        from db import SessionLocal
+                        
+                        db = SessionLocal()
+                        try:
+                            # Apply the delta to the player's soulmap
+                            updated_soulmap = apply_delta(db, task.player_id, result)
+                            print(f"✅ [codex] Successfully applied soulmap delta for player={task.player_id}")
+                            print(f"✅ [codex] Updated soulmap vector length: {len(updated_soulmap.vec)}")
+                        except Exception as db_error:
+                            print(f"❌ [codex] Database error applying soulmap delta: {db_error}")
+                            import traceback
+                            print(f"❌ [codex] Database error traceback: {traceback.format_exc()}")
+                        finally:
+                            db.close()
+                    except ImportError as import_error:
+                        print(f"❌ [codex] Import error applying soulmap delta: {import_error}")
+                    except Exception as e:
+                        print(f"❌ [codex] Failed to apply soulmap delta: {e}")
+                        import traceback
+                        print(f"❌ [codex] Error traceback: {traceback.format_exc()}")
+                else:
+                    print(f"⚠️ [codex] No soulmap delta result to apply for task {task_id}")
+                
                 print(f"✅ [codex] Completed soulmap inference task {task_id}: {result}")
                 
             except Exception as e:
