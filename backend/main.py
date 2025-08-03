@@ -1182,6 +1182,17 @@ def api_validate(tree: dict) -> dict[str, list[str]]:
     issues = validate(tree)
     return {"issues": issues}
 
+@app.get("/ritual")
+def api_ritual_get():
+    """
+    Handle GET requests to /ritual endpoint.
+    This should not be accessed directly - use POST instead.
+    """
+    raise HTTPException(
+        status_code=405,
+        detail="Method Not Allowed. Use POST to perform the ritual."
+    )
+
 
 
 
