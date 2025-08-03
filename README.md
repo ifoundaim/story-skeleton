@@ -122,6 +122,59 @@
 
 ---
 
+### ✅ Dynamic NPC Seed Generator & Profile Factory Sprint (NPC06) - COMPLETED
+**LLM-Based NPC Generation with 8-Layer Validation Logic**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - LLM-based NPC generation using OpenAI GPT-4o-mini
+  - 8-layer validation logic for comprehensive NPC quality
+  - Pydantic validation with custom validators for data integrity
+  - Database integration with new NPC profile columns
+  - Seamless integration with NPC07 fallback system
+  - Comprehensive test suite with mocked LLM calls
+
+**Technical Implementation:**
+- **LLM Generator:** `purpose_agents/npc_seed.py` - `generate_dynamic_npcs()` with 8-layer validation
+- **Database Migration:** `backend/migrations/versions/e00465f00064_npc06_add_npc_profile_columns.py` - New columns
+- **Model Updates:** `backend/npc/models.py` - Added summary, portrait_url, baseline_trust columns
+- **Integration:** `backend/main.py` - Dynamic NPC generation in `/ritual` endpoint
+- **Enhanced Seeding:** `backend/npc/profile_seed.py` - `seed_dynamic_npcs()` function
+- **Testing:** `backend/tests/test_dynamic_npc_generation.py` - Comprehensive test suite
+
+**8-Layer NPC Generation Logic:**
+1. **Narrative Roles** - Unique per NPC (Mentor, Rival, Healer, Trickster, Guardian, Wild-card)
+2. **Theme Alignment** - Each back-story echoes/challenges ritual theme
+3. **Avatar Synergy/Contrast** - ≥2 share player values, ≥1 contrasts them
+4. **Baseline-Trust Band** - 0.20-0.45, varied tiers
+5. **Skill Coverage** - Cover Combat, Social, Tech, Magic, Survival at least once each
+6. **Diversity Filter** - Varied genders, cultures, neurotypes
+7. **World Hooks** - Summary references a location/faction/artifact
+8. **Validation Pass** - Clamp trust, dedupe names, regenerate invalid
+
+**LLM Prompt Specification:**
+- **System:** "You are a narrative casting director generating concise JSON."
+- **User Input:** Player archetype, soul intent theme, ask/seek/knock text
+- **Output:** JSON array with id, full_name, archetype, role, skill_tag, one_line_summary, baseline_trust
+- **Validation:** Pydantic models with custom validators for format and content
+
+**Acceptance Criteria:**
+✅ New ritual seeds 6 valid NPC rows when fallback flag is false  
+✅ Flag true still seeds the 8 static profiles  
+✅ All new tests pass; CI green  
+
+**Usage:**
+```bash
+# Generate dynamic NPCs (requires OpenAI API key)
+export USE_FALLBACK_NPCS=false
+export OPENAI_API_KEY=your_api_key_here
+
+# Use fallback NPCs (no API key required)
+export USE_FALLBACK_NPCS=true
+```
+
+---
+
 ### ✅ NPC Profile Helper Sprint (NPC02) - COMPLETED
 **Backend Safeguard for NPC Profile Creation**
 - **Status:** ✅ **COMPLETED** 

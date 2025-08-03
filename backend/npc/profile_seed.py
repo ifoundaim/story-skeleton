@@ -32,13 +32,27 @@ def _load_fallback_npcs() -> List[Dict[str, Any]]:
         print(f"Error parsing fallback NPCs JSON: {e}")
         return []
 
-def generate_dynamic_npcs() -> List[Dict[str, Any]]:
+def generate_dynamic_npcs(
+    archetype: str = "Adventurer",
+    theme: str = "hero's journey",
+    ask: str = "",
+    seek: str = "",
+    knock: str = "",
+    count: int = 6
+) -> List[Dict[str, Any]]:
     """
-    Stub function for NPC06 - will generate NPCs via LLM call.
-    Returns empty list for now.
+    Generate dynamic NPCs via LLM call (NPC06 implementation).
+    Returns empty list if LLM generation fails.
     """
-    # TODO: Implement LLM-based NPC generation in NPC06
-    return []
+    try:
+        from purpose_agents.npc_seed import generate_dynamic_npcs as llm_generate_npcs
+        return llm_generate_npcs(archetype, theme, ask, seek, knock, count)
+    except ImportError:
+        print("Warning: purpose_agents.npc_seed not available, returning empty list")
+        return []
+    except Exception as e:
+        print(f"Error generating dynamic NPCs: {e}")
+        return []
 
 def seed_fallback_npcs(player_id: str, db: Session = None) -> None:
     """
@@ -64,10 +78,11 @@ def seed_fallback_npcs(player_id: str, db: Session = None) -> None:
                     player_id=player_id,
                     name=npc_info["full_name"],
                     trust=npc_info["baseline_trust"],
+                    summary=npc_info.get("summary", ""),
+                    portrait_url=npc_info.get("portrait_url", ""),
+                    baseline_trust=npc_info["baseline_trust"],
                     meta={
-                        "summary": npc_info["summary"],
                         "archetype": npc_info["archetype"],
-                        "portrait_url": npc_info["portrait_url"],
                         "created_from_fallback": True
                     }
                 )
@@ -75,6 +90,53 @@ def seed_fallback_npcs(player_id: str, db: Session = None) -> None:
                 db.commit()
                 db.refresh(npc)
                 print(f"Created fallback NPC: {npc_info['full_name']} ({npc_id})")
+            else:
+                print(f"NPC {npc_id} already exists, skipping")
+    finally:
+        if should_close_db:
+            db.close()
+
+
+def seed_dynamic_npcs(player_id: str, npc_data: List[Dict[str, Any]], db: Session = None) -> None:
+    """
+    Seed NPCs from dynamic generation for a player.
+    Only creates NPCs that don't already exist.
+    """
+    should_close_db = False
+    if db is None:
+        db = SessionLocal()
+        should_close_db = True
+    
+    try:
+        for npc_info in npc_data:
+            npc_id = npc_info["id"]
+            # Generate the UUID for this NPC
+            npc_uuid = uuid.uuid5(uuid.NAMESPACE_OID, f"{player_id}:{npc_id}")
+            existing_npc = get_npc_by_id(player_id, str(npc_uuid), db)
+            if existing_npc is None:
+                # Clamp trust values to valid range
+                trust_value = max(0.20, min(0.45, npc_info["baseline_trust"]))
+                
+                # Create NPC with dynamic metadata from the start
+                npc = NPCState(
+                    id=npc_uuid,
+                    player_id=player_id,
+                    name=npc_info["full_name"],
+                    trust=trust_value,
+                    summary=npc_info.get("one_line_summary", ""),
+                    portrait_url=npc_info.get("portrait_url", ""),
+                    baseline_trust=trust_value,
+                    meta={
+                        "archetype": npc_info.get("archetype", ""),
+                        "role": npc_info.get("role", ""),
+                        "skill_tag": npc_info.get("skill_tag", ""),
+                        "created_from_dynamic": True
+                    }
+                )
+                db.add(npc)
+                db.commit()
+                db.refresh(npc)
+                print(f"Created dynamic NPC: {npc_info['full_name']} ({npc_id})")
             else:
                 print(f"NPC {npc_id} already exists, skipping")
     finally:

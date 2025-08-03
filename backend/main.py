@@ -61,6 +61,14 @@ from codex.npc import generate_npc_dialogue
 from codex.npc.npc_group_dialogue import generate_group_dialogue
 from soulmap import router as soulmap_router
 
+# Import NPC seed generator
+try:
+    from purpose_agents.npc_seed import generate_dynamic_npcs
+except ImportError:
+    # Fallback for when NPC seed module is not available
+    def generate_dynamic_npcs(*args, **kwargs):
+        return []
+
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
 STORY_FILE  = str(BASE_DIR / "story.json")
@@ -251,6 +259,36 @@ async def api_ritual(payload: RitualRequest) -> RitualResponse:
         )
     except Exception as e:
         print(f"⚠️ [main] Media generation enqueue failed: {e}")
+
+    # Generate dynamic NPCs if fallback flag is disabled
+    if not settings.USE_FALLBACK_NPCS:
+        try:
+            # Get player archetype from profile
+            player_archetype = None
+            for pid, profile in profiles.items():
+                if pid == payload.playerId:
+                    player_archetype = profile.get("archetype", "Adventurer")
+                    break
+            
+            if player_archetype:
+                npcs = generate_dynamic_npcs(
+                    archetype=player_archetype,
+                    theme=str(data["theme"]),
+                    ask=payload.askText,
+                    seek=payload.seekText,
+                    knock=payload.knockText,
+                    count=6
+                )
+                
+                if npcs:
+                    # Store generated NPCs in state for later use
+                    state["stories"][soul_seed_id]["generated_npcs"] = npcs
+                    _write_json(str(STATE_FILE), state)
+                    print(f"✅ [main] Generated {len(npcs)} dynamic NPCs for player {payload.playerId}")
+                else:
+                    print(f"⚠️ [main] No dynamic NPCs generated for player {payload.playerId}")
+        except Exception as e:
+            print(f"⚠️ [main] Dynamic NPC generation failed: {e}")
 
     print(f"✅ [main] /ritual returning nextSceneTag={first_tag}")
     return RitualResponse(
@@ -540,18 +578,29 @@ async def api_start(req: StartRequest) -> SceneResponse:
             except Exception as e:
                 print(f"[main] Failed to synchronously generate media in /start: {e}")
         
-        # Seed fallback NPCs if flag is enabled
-        if player_id and settings.USE_FALLBACK_NPCS:
+        # Seed NPCs based on configuration
+        if player_id:
             try:
                 from db import SessionLocal
+                from npc.profile_seed import seed_fallback_npcs, seed_dynamic_npcs
                 db = SessionLocal()
                 try:
-                    seed_fallback_npcs(player_id, db)
-                    print(f"[main] Seeded fallback NPCs for player {player_id}")
+                    if settings.USE_FALLBACK_NPCS:
+                        # Seed fallback NPCs
+                        seed_fallback_npcs(player_id, db)
+                        print(f"[main] Seeded fallback NPCs for player {player_id}")
+                    else:
+                        # Seed dynamic NPCs if available
+                        generated_npcs = st.get("generated_npcs", [])
+                        if generated_npcs:
+                            seed_dynamic_npcs(player_id, generated_npcs, db)
+                            print(f"[main] Seeded {len(generated_npcs)} dynamic NPCs for player {player_id}")
+                        else:
+                            print(f"[main] No dynamic NPCs available for player {player_id}")
                 finally:
                     db.close()
             except Exception as e:
-                print(f"[main] Failed to seed fallback NPCs in /start: {e}")
+                print(f"[main] Failed to seed NPCs in /start: {e}")
         
         # Ensure NPC profiles exist for all NPCs in the scene
         if player_id and current_scene:
