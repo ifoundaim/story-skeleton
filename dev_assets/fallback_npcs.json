@@ -1,0 +1,66 @@
+[
+  {
+    "id": "lyra_orinova",
+    "full_name": "Lyra Orinova",
+    "summary": "Resourceful sky-sailor who trades secrets for starlight maps.",
+    "archetype": "Explorer",
+    "baseline_trust": 0.40,
+    "portrait_url": ""
+  },
+  {
+    "id": "orin_kael",
+    "full_name": "Orin Kael",
+    "summary": "Veteran guardian driven by an oath to protect the innocent.",
+    "archetype": "Guardian",
+    "baseline_trust": 0.35,
+    "portrait_url": ""
+  },
+  {
+    "id": "mira_sagewind",
+    "full_name": "Mira Sagewind",
+    "summary": "Wandering herbalist whose calm presence hides a quick wit.",
+    "archetype": "Healer",
+    "baseline_trust": 0.33,
+    "portrait_url": ""
+  },
+  {
+    "id": "dante_firn",
+    "full_name": "Dante Firn",
+    "summary": "Technomancer tinkering with relic machines of a lost age.",
+    "archetype": "Artificer",
+    "baseline_trust": 0.32,
+    "portrait_url": ""
+  },
+  {
+    "id": "selene_waveborn",
+    "full_name": "Selene Waveborn",
+    "summary": "Runaway noble mastering tide-binding water rites.",
+    "archetype": "Mystic",
+    "baseline_trust": 0.38,
+    "portrait_url": ""
+  },
+  {
+    "id": "thorne_ironsoul",
+    "full_name": "Thorne Ironsoul",
+    "summary": "Stoic warrior seeking redemption for past misdeeds.",
+    "archetype": "Redeemer",
+    "baseline_trust": 0.30,
+    "portrait_url": ""
+  },
+  {
+    "id": "caelis_skydancer",
+    "full_name": "Caelis Skydancer",
+    "summary": "Free-spirited courier racing lightning across cloud-rails.",
+    "archetype": "Courier",
+    "baseline_trust": 0.42,
+    "portrait_url": ""
+  },
+  {
+    "id": "auri_nightsong",
+    "full_name": "Auri Nightsong",
+    "summary": "Shadow bard weaving truths into forbidden lullabies.",
+    "archetype": "Minstrel",
+    "baseline_trust": 0.45,
+    "portrait_url": ""
+  }
+] 

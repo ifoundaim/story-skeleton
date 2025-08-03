@@ -84,6 +84,44 @@
 
 ---
 
+### ✅ Fallback NPC Bundle & ENV Switch Sprint (NPC07) - COMPLETED
+**Zero-Cost Development Mode with Deterministic NPC Profiles**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Environment flag `USE_FALLBACK_NPCS` for zero-cost development mode
+  - Deterministic fallback bundle with 8 pre-defined NPC profiles
+  - Factory pattern `get_seed_npcs()` with environment-driven behavior
+  - Idempotent NPC seeding (no duplicates on multiple runs)
+  - Comprehensive unit tests for fallback functionality
+  - Integration with existing NPC profile system
+
+**Technical Implementation:**
+- **Fallback Bundle:** `dev_assets/fallback_npcs.json` - 8 deterministic NPC profiles
+- **Settings:** `backend/settings.py` - Pydantic BaseSettings with environment loading
+- **Factory:** `backend/npc/profile_seed.py` - `get_seed_npcs()` and `seed_fallback_npcs()`
+- **Integration:** `backend/main.py` - Fallback seeding in `/start` endpoint
+- **Testing:** `backend/tests/test_fallback_seed.py` - Comprehensive test suite
+- **Documentation:** `env.example` - Environment variable documentation
+
+**Fallback NPC Profiles:**
+- **Lyra Orinova** (Explorer) - Resourceful sky-sailor who trades secrets for starlight maps
+- **Orin Kael** (Guardian) - Veteran guardian driven by an oath to protect the innocent
+- **Mira Sagewind** (Healer) - Wandering herbalist whose calm presence hides a quick wit
+- **Dante Firn** (Artificer) - Technomancer tinkering with relic machines of a lost age
+- **Selene Waveborn** (Mystic) - Runaway noble mastering tide-binding water rites
+- **Thorne Ironsoul** (Redeemer) - Stoic warrior seeking redemption for past misdeeds
+- **Caelis Skydancer** (Courier) - Free-spirited courier racing lightning across cloud-rails
+- **Auri Nightsong** (Minstrel) - Shadow bard weaving truths into forbidden lullabies
+
+**Environment Configuration:**
+- **Flag:** `USE_FALLBACK_NPCS=true` - Enables fallback mode (default: false)
+- **Behavior:** When enabled, skips LLM calls and uses deterministic NPC bundle
+- **Idempotency:** Running multiple times creates no duplicate NPC rows
+- **Integration:** Works seamlessly with existing NPC trust and dialogue systems
+
+---
+
 ### ✅ NPC Profile Helper Sprint (NPC02) - COMPLETED
 **Backend Safeguard for NPC Profile Creation**
 - **Status:** ✅ **COMPLETED** 

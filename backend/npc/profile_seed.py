@@ -1,8 +1,85 @@
 from npc.service import get_npc_by_id, create_default_npc
+from npc.models import NPCState
 from db import SessionLocal
 from sqlalchemy.orm import Session
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import uuid
+import json
+import os
+from settings import settings
+
+def get_seed_npcs() -> List[Dict[str, Any]]:
+    """
+    Factory function to get NPC seed data.
+    If USE_FALLBACK_NPCS is True, returns fallback bundle.
+    Otherwise, calls generate_dynamic_npcs() (stub for NPC06).
+    """
+    if settings.USE_FALLBACK_NPCS:
+        return _load_fallback_npcs()
+    else:
+        return generate_dynamic_npcs()
+
+def _load_fallback_npcs() -> List[Dict[str, Any]]:
+    """Load fallback NPC data from JSON file"""
+    fallback_path = os.path.join(os.path.dirname(__file__), '..', '..', 'dev_assets', 'fallback_npcs.json')
+    try:
+        with open(fallback_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Warning: Fallback NPCs file not found at {fallback_path}")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"Error parsing fallback NPCs JSON: {e}")
+        return []
+
+def generate_dynamic_npcs() -> List[Dict[str, Any]]:
+    """
+    Stub function for NPC06 - will generate NPCs via LLM call.
+    Returns empty list for now.
+    """
+    # TODO: Implement LLM-based NPC generation in NPC06
+    return []
+
+def seed_fallback_npcs(player_id: str, db: Session = None) -> None:
+    """
+    Seed NPCs from fallback bundle for a player.
+    Only creates NPCs that don't already exist.
+    """
+    should_close_db = False
+    if db is None:
+        db = SessionLocal()
+        should_close_db = True
+    
+    try:
+        npc_data = get_seed_npcs()
+        for npc_info in npc_data:
+            npc_id = npc_info["id"]
+            # Generate the UUID for this NPC
+            npc_uuid = uuid.uuid5(uuid.NAMESPACE_OID, f"{player_id}:{npc_id}")
+            existing_npc = get_npc_by_id(player_id, str(npc_uuid), db)
+            if existing_npc is None:
+                # Create NPC with fallback metadata from the start
+                npc = NPCState(
+                    id=npc_uuid,
+                    player_id=player_id,
+                    name=npc_info["full_name"],
+                    trust=npc_info["baseline_trust"],
+                    meta={
+                        "summary": npc_info["summary"],
+                        "archetype": npc_info["archetype"],
+                        "portrait_url": npc_info["portrait_url"],
+                        "created_from_fallback": True
+                    }
+                )
+                db.add(npc)
+                db.commit()
+                db.refresh(npc)
+                print(f"Created fallback NPC: {npc_info['full_name']} ({npc_id})")
+            else:
+                print(f"NPC {npc_id} already exists, skipping")
+    finally:
+        if should_close_db:
+            db.close()
 
 def ensure_npc_profile(scene: dict, player_id: str) -> None:
     """

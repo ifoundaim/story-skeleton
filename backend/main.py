@@ -49,7 +49,8 @@ except ImportError:
         return []
     def auto_heal(tree, aggressive=False):
         return tree
-from npc.profile_seed import ensure_npc_profile
+from npc.profile_seed import ensure_npc_profile, seed_fallback_npcs
+from settings import settings
 from repository_router import router as repository_router
 from media.models import MediaAssets
 from emotion.router import router as emotion_router
@@ -538,6 +539,19 @@ async def api_start(req: StartRequest) -> SceneResponse:
                     
             except Exception as e:
                 print(f"[main] Failed to synchronously generate media in /start: {e}")
+        
+        # Seed fallback NPCs if flag is enabled
+        if player_id and settings.USE_FALLBACK_NPCS:
+            try:
+                from db import SessionLocal
+                db = SessionLocal()
+                try:
+                    seed_fallback_npcs(player_id, db)
+                    print(f"[main] Seeded fallback NPCs for player {player_id}")
+                finally:
+                    db.close()
+            except Exception as e:
+                print(f"[main] Failed to seed fallback NPCs in /start: {e}")
         
         # Ensure NPC profiles exist for all NPCs in the scene
         if player_id and current_scene:
