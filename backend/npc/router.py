@@ -3,14 +3,16 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 from db import SessionLocal
-from .models import NPCState
+from .models import NPCState, NPC
 from .service import (
     get_state, 
     apply_trust, 
     apply_trust_to_multiple,
     get_trust_scores,
     ensure_default_npcs,
-    get_npc_by_id
+    get_npc_by_id,
+    ensure_npc_profile,
+    apply_trust_new
 )
 
 router = APIRouter()
@@ -28,6 +30,11 @@ class NPCDialogueRequest(BaseModel):
     player_id: str
     npc_ids: List[str]
     scene_context: Optional[str] = ""
+
+class NPCProfileRequest(BaseModel):
+    npc_id: str
+    full_name: str
+    baseline_trust: float = 0.0
 
 def get_db():
     db = SessionLocal()
@@ -129,4 +136,79 @@ def generate_group_dialogue(request: NPCDialogueRequest, db: Session = Depends(g
             'dialogue': dialogue_entries
         }
     except Exception as e:
-        raise HTTPException(500, f'Failed to generate dialogue: {str(e)}') 
+        raise HTTPException(500, f'Failed to generate dialogue: {str(e)}')
+
+# New endpoints for the NPC table (Sprint NPC01 requirements)
+
+@router.post('/profile')
+def create_npc_profile(request: NPCProfileRequest, db: Session = Depends(get_db)):
+    """Create an idempotent NPC profile in the new npc table"""
+    try:
+        npc = ensure_npc_profile(request.npc_id, request.full_name, request.baseline_trust, db)
+        return {
+            'id': str(npc.id),
+            'full_name': npc.full_name,
+            'baseline_trust': npc.baseline_trust,
+            'trust': npc.trust,
+        }
+    except Exception as e:
+        raise HTTPException(500, f'Failed to create NPC profile: {str(e)}')
+
+@router.get('/profile/{npc_id}')
+def get_npc_profile(npc_id: str, db: Session = Depends(get_db)):
+    """Get an NPC profile from the new npc table"""
+    try:
+        import uuid
+        if isinstance(npc_id, str):
+            try:
+                npc_uuid = uuid.UUID(npc_id)
+            except ValueError:
+                npc_uuid = uuid.uuid5(uuid.NAMESPACE_OID, npc_id)
+        else:
+            npc_uuid = npc_id
+        
+        npc = db.query(NPC).filter_by(id=npc_uuid).first()
+        if not npc:
+            raise HTTPException(404, f'NPC profile {npc_id} not found')
+        
+        return {
+            'id': str(npc.id),
+            'full_name': npc.full_name,
+            'baseline_trust': npc.baseline_trust,
+            'trust': npc.trust,
+        }
+    except Exception as e:
+        raise HTTPException(500, f'Failed to get NPC profile: {str(e)}')
+
+@router.post('/profile/{npc_id}/trust')
+def update_npc_trust(npc_id: str, delta: float, db: Session = Depends(get_db)):
+    """Update trust for an NPC in the new npc table"""
+    try:
+        npc = apply_trust_new(None, npc_id, delta, db)
+        return {
+            'id': str(npc.id),
+            'full_name': npc.full_name,
+            'baseline_trust': npc.baseline_trust,
+            'trust': npc.trust,
+        }
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f'Failed to update NPC trust: {str(e)}')
+
+@router.get('/profiles')
+def get_all_npc_profiles(db: Session = Depends(get_db)):
+    """Get all NPC profiles from the new npc table"""
+    try:
+        npcs = db.query(NPC).all()
+        return [
+            {
+                'id': str(npc.id),
+                'full_name': npc.full_name,
+                'baseline_trust': npc.baseline_trust,
+                'trust': npc.trust,
+            }
+            for npc in npcs
+        ]
+    except Exception as e:
+        raise HTTPException(500, f'Failed to get NPC profiles: {str(e)}') 

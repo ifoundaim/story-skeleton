@@ -4,6 +4,59 @@
 
 ## 🎯 Recent Sprint Completions
 
+### ✅ NPC & Trust System Sprint (SPR-NPC01) - COMPLETED
+**Non-Player Characters with Persistent Trust Values**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - New `npc` table with `id`, `full_name`, `baseline_trust`, `trust` fields
+  - Idempotent NPC profile creation with `ensure_npc_profile()` function
+  - Trust value management with `apply_trust()` function and 0.0-1.0 clamping
+  - RESTful API endpoints for NPC profile and trust management
+  - Backward compatibility with existing `npc_state` table
+  - Comprehensive test suite for all new functionality
+  - Alembic migration for database schema updates
+
+**Technical Implementation:**
+- **Database Migration:** `backend/migrations/versions/npc02_create_npc_table.py` - New NPC table schema
+- **Data Models:** `backend/npc/models.py` - NPC model with baseline_trust and trust fields
+- **Service Layer:** `backend/npc/service.py` - `ensure_npc_profile()` and `apply_trust_new()` functions
+- **API Router:** `backend/npc/router.py` - New endpoints for NPC profile management
+- **Profile Seeding:** `backend/npc/profile_seed.py` - Idempotent NPC creation utilities
+- **Testing:** `backend/tests/test_npc_sprint01.py` - Comprehensive test suite
+- **API Testing:** `backend/tests/test_npc_api_sprint01.py` - API endpoint validation
+
+**NPC System Features:**
+- **Persistent Profiles:** Each NPC has unique ID, full name, and baseline trust value
+- **Trust Evolution:** Trust values (0.0-1.0) change based on player choices and interactions
+- **Idempotent Creation:** `ensure_npc_profile()` creates NPCs safely without duplicates
+- **Trust Management:** `apply_trust()` increments/decrements trust with automatic clamping
+- **API Integration:** RESTful endpoints for creating, reading, and updating NPC profiles
+- **Backward Compatibility:** Existing `npc_state` table continues to function
+
+**API Endpoints:**
+- `POST /npc/profile` - Create idempotent NPC profile
+- `GET /npc/profile/{npc_id}` - Retrieve NPC profile
+- `POST /npc/profile/{npc_id}/trust` - Update NPC trust value
+- `GET /npc/profiles` - List all NPC profiles
+
+**Trust System:**
+- **Baseline Trust:** Initial trust value set when NPC is created
+- **Current Trust:** Dynamic trust value that changes based on player interactions
+- **Trust Clamping:** Values automatically constrained to 0.0-1.0 range
+- **Delta Application:** Trust changes applied as positive/negative deltas
+- **Persistence:** Trust changes persist across scenes and sessions
+
+**Acceptance Criteria Met:**
+- ✅ Alembic migration adds `npc` table with required fields
+- ✅ `ensure_npc_profile()` creates idempotent NPC entries
+- ✅ `apply_trust()` increments/decrements NPC trust based on choices
+- ✅ Trust values persist across scenes and sessions
+- ✅ Comprehensive test coverage for all functionality
+- ✅ Backward compatibility with existing NPC system
+
+---
+
 ### ✅ System Bootstrap Sprint (SPR-BOOT01) - COMPLETED
 **Docker Compose Stack, pgvector Extension, Health Check System**
 - **Status:** ✅ **COMPLETED** 
@@ -196,37 +249,6 @@
 - **Choice Patterns:** Detects and describes player choice approaches
 - **Word Limiting:** Intelligent truncation respecting sentence boundaries
 - **Persistence:** Automatic saving and retrieval of memory state
-
----
-
-### ✅ NPC Trust System Sprint (NPC01) - COMPLETED
-**Dynamic NPC Trust Tracking & Relationship Management**
-- **Status:** ✅ **COMPLETED** 
-- **Date:** July 2025
-- **Key Features:**
-  - Database-driven NPC trust system with PostgreSQL storage
-  - Real-time trust updates based on player choices
-  - Trust clamping (0.0 to 1.0 range) with automatic bounds checking
-  - NPC state persistence with metadata and last-seen tracking
-  - Frontend trust meter visualization in dialogue components
-  - Comprehensive API for trust management and retrieval
-
-**Technical Implementation:**
-- **Database:** `npc_state` table with migration (`npc01_init_npc_state.py`)
-- **Models:** `NPCState` model with trust, name, and metadata fields
-- **API Endpoints:** `GET /npc/{player_id}`, `POST /npc/update`
-- **Service Layer:** `apply_trust()` function with automatic clamping
-- **Integration:** Trust updates integrated into story choice system
-- **Frontend:** `Dialogue.tsx` component with trust meter visualization
-- **Testing:** Comprehensive test suite in `tests/backend/test_npc.py`
-- **Agent Integration:** `codex/agents.py` - NPC01 agent for sprint tracking
-
-**Trust System Features:**
-- **Dynamic Updates:** Trust changes based on choice `trust_delta` values
-- **Automatic Clamping:** Trust values automatically bounded between 0.0 and 1.0
-- **NPC Persistence:** Individual NPC states stored per player
-- **Metadata Support:** Flexible JSON metadata for future NPC features
-- **Real-time Integration:** Seamless integration with story choice system
 
 ---
 

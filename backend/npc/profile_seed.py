@@ -1,4 +1,4 @@
-from npc.service import get_npc_by_id, create_default_npc
+from npc.service import get_npc_by_id, create_default_npc, ensure_npc_profile as ensure_npc_profile_service
 from db import SessionLocal
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
@@ -8,6 +8,7 @@ def ensure_npc_profile(scene: dict, player_id: str) -> None:
     """
     Guarantees every NPC referenced in the scene has an entry in npc_state.
     Supports 'npc_profile' blocks OR fallback to 'npcs_present'.
+    This function maintains backward compatibility with the existing system.
     """
     db = SessionLocal()
     try:
@@ -39,4 +40,11 @@ def ensure_npc_profile(scene: dict, player_id: str) -> None:
                 _add_stub(npc_id)
 
     finally:
-        db.close() 
+        db.close()
+
+def ensure_npc_profile_new(npc_id: str, full_name: str, baseline_trust: float = 0.0) -> None:
+    """
+    Creates idempotent NPC entries in the new npc table.
+    This is the new function as specified in Sprint NPC01 requirements.
+    """
+    ensure_npc_profile_service(npc_id, full_name, baseline_trust) 

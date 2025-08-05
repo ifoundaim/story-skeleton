@@ -1,4 +1,4 @@
-from .models import NPCState
+from .models import NPCState, NPC
 from db import SessionLocal
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
@@ -95,4 +95,90 @@ def ensure_default_npcs(player_id: str, db: Session) -> List[NPCState]:
             npc = create_default_npc(player_id, str(npc_uuid), name, db)
             created_npcs.append(npc)
     
-    return existing_npcs + created_npcs 
+    return existing_npcs + created_npcs
+
+# New functions for the NPC table (Sprint NPC01 requirements)
+
+def ensure_npc_profile(npc_id: str, full_name: str, baseline_trust: float = 0.0, db: Session = None) -> NPC:
+    """
+    Creates idempotent NPC entries in the npc table.
+    If NPC already exists, returns existing NPC without modification.
+    """
+    if db is None:
+        db = SessionLocal()
+        should_close = True
+    else:
+        should_close = False
+    
+    try:
+        # Convert npc_id to UUID if it's a string
+        if isinstance(npc_id, str):
+            try:
+                npc_uuid = uuid.UUID(npc_id)
+            except ValueError:
+                # If not a valid UUID, generate one based on the string
+                npc_uuid = uuid.uuid5(uuid.NAMESPACE_OID, npc_id)
+        else:
+            npc_uuid = npc_id
+        
+        # Check if NPC already exists
+        existing_npc = db.query(NPC).filter_by(id=npc_uuid).first()
+        if existing_npc:
+            return existing_npc
+        
+        # Create new NPC
+        npc = NPC(
+            id=npc_uuid,
+            full_name=full_name,
+            baseline_trust=baseline_trust,
+            trust=baseline_trust  # Initialize trust to baseline_trust
+        )
+        db.add(npc)
+        db.commit()
+        db.refresh(npc)
+        return npc
+    
+    finally:
+        if should_close:
+            db.close()
+
+def apply_trust_new(player_id: str, npc_id: str, delta: float, db: Session = None) -> NPC:
+    """
+    Increments or decrements NPC trust based on choices.
+    This function works with the new NPC table.
+    """
+    if db is None:
+        db = SessionLocal()
+        should_close = True
+    else:
+        should_close = False
+    
+    try:
+        # Convert npc_id to UUID if it's a string
+        if isinstance(npc_id, str):
+            try:
+                npc_uuid = uuid.UUID(npc_id)
+            except ValueError:
+                # If not a valid UUID, generate one based on the string
+                npc_uuid = uuid.uuid5(uuid.NAMESPACE_OID, npc_id)
+        else:
+            npc_uuid = npc_id
+        
+        # Get NPC from the new table
+        npc = db.query(NPC).filter_by(id=npc_uuid).first()
+        if not npc:
+            raise ValueError(f"NPC with id {npc_id} not found")
+        
+        # Apply trust delta and clamp to 0.0-1.0 range
+        npc.trust = min(max(npc.trust + delta, 0.0), 1.0)
+        db.commit()
+        db.refresh(npc)
+        return npc
+    
+    finally:
+        if should_close:
+            db.close()
+
+def get_companions(player_id: str, db: Session) -> List[NPCState]:
+    """Get active companions for a player (legacy function for backward compatibility)"""
+    return get_state(player_id, db) 

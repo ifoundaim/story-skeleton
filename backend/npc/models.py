@@ -13,4 +13,11 @@ class NPCState(Base):
     name = Column(String, nullable=False)
     trust = Column(Float, nullable=False, default=0.0)
     last_seen = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-    meta = Column(JSON, nullable=False, default=dict) 
+    meta = Column(JSON, nullable=False, default=dict)
+
+class NPC(Base):
+    __tablename__ = 'npc'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name = Column(String, nullable=False)
+    baseline_trust = Column(Float, nullable=False, default=0.0)
+    trust = Column(Float, nullable=False, default=0.0) 

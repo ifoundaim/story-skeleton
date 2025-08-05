@@ -51,6 +51,7 @@ def clean_db():
     # Delete all data from tables
     with backend.db.engine.connect() as conn:
         conn.execute(text("DELETE FROM npc_state"))
+        conn.execute(text("DELETE FROM npc"))  # Add cleanup for new NPC table
         conn.execute(text("DELETE FROM soul_maps"))
         conn.commit()
 
