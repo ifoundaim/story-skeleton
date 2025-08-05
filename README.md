@@ -4,6 +4,42 @@
 
 ## 🎯 Recent Sprint Completions
 
+### ✅ System Bootstrap Sprint (SPR-BOOT01) - COMPLETED
+**Docker Compose Stack, pgvector Extension, Health Check System**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** August 2025
+- **Key Features:**
+  - Docker Compose stack with API, database, frontend, and minio services
+  - pgvector extension enabled in PostgreSQL for vector operations
+  - Health check endpoint and script for system monitoring
+  - Pydantic BaseSettings for proper .env configuration management
+  - CI integration with GitHub Actions health check workflow
+  - Comprehensive local development setup documentation
+
+**Technical Implementation:**
+- **Docker Compose:** `docker-compose.yml` - Complete service stack with health checks
+- **Settings Management:** `backend/settings.py` - Pydantic BaseSettings for environment variables
+- **Health Check:** `scripts/healthcheck.sh` - Automated health verification script
+- **API Endpoint:** `backend/main.py` - `/health` endpoint with system status
+- **CI Integration:** `.github/workflows/health-check.yml` - Automated health check workflow
+- **Database:** PostgreSQL with pgvector extension for vector operations
+- **Environment:** `.env.sample` - Template for required environment variables
+
+**System Features:**
+- **Service Health:** Real-time health monitoring with retry logic
+- **Vector Support:** pgvector extension for 64-dimensional soulmap vectors
+- **Configuration:** Centralized settings management with environment variable support
+- **Development:** Local development environment with hot reloading
+- **CI/CD:** Automated health checks on pull requests and deployments
+
+**Acceptance Criteria Met:**
+- ✅ `docker-compose up` boots API + DB successfully
+- ✅ `GET /health` returns HTTP 200 with system status
+- ✅ pgvector extension exists and functions correctly
+- ✅ CI job passes with automated health verification
+
+---
+
 ### ✅ Story Tree Validator & Auto-Healing System (SPR-VALID01) - COMPLETED
 **Automated Story Tree Validation & Auto-Healing System**
 - **Status:** ✅ **COMPLETED** 
@@ -300,10 +336,28 @@ Contracts are **versioned**; breaking changes require bumping `_vX` suffix and u
 
 ## 🛠️ Local Development
 
+### Quick Start
 1. `git clone …`
 2. `cp .env.sample .env` → fill DB & S3 creds.
 3. `docker-compose up` (spins Postgres, pgvector, minio, inference‑GPU stub).
-4. Visit `http://localhost:3000` for the React front‑end scaffold.
+4. Run health check: `./scripts/healthcheck.sh`
+5. Visit `http://localhost:3000` for the React front‑end scaffold.
+
+### Health Check
+The system includes automated health checking:
+```bash
+# Manual health check
+./scripts/healthcheck.sh
+
+# Check pgvector extension
+docker-compose exec db psql -U postgres -d purposepath -c "SELECT vector_dims('[1,2,3]');"
+```
+
+### Environment Configuration
+The system uses Pydantic BaseSettings for configuration management:
+- **Settings File:** `backend/settings.py` - Centralized configuration
+- **Environment:** `.env` - Local environment variables (not committed)
+- **Template:** `.env.sample` - Template for required variables
 
 > **Note**: Without a GPU you can export `USE_CPU_STUBS=true` to run text‑only mocks.
 

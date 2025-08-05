@@ -1,0 +1,39 @@
+name: Health Check CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Start services
+      run: |
+        docker-compose up --build -d
+        echo "Waiting for services to start..."
+        sleep 30
+        
+    - name: Run health check
+      run: |
+        chmod +x scripts/healthcheck.sh
+        ./scripts/healthcheck.sh
+        
+    - name: Verify pgvector extension
+      run: |
+        docker-compose exec -T db psql -U postgres -d purposepath -c "SELECT vector_dims('[1,2,3]');"
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        docker-compose down 

@@ -6,15 +6,17 @@ central FastAPI app for SoulSeed
 # 1️⃣ Future import must come first
 from __future__ import annotations
 
-# 2️⃣ Load env vars from both `.env.cursor` (committed) and `.env` (secret)
+# 2️⃣ Load settings from Pydantic BaseSettings
 from pathlib import Path
-from dotenv import load_dotenv
 import os
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BASE_DIR.parent
-load_dotenv(REPO_ROOT / ".env.cursor", override=False)  # safe dummy values for Cursor
-load_dotenv(REPO_ROOT / ".env", override=True)           # your actual local secrets
+
+# Import settings after setting up paths
+sys.path.insert(0, str(BASE_DIR))
+from settings import settings
 
 # 3️⃣ Standard lib
 from datetime import datetime
@@ -76,7 +78,7 @@ app.include_router(repository_router, prefix='/repository')
 app.include_router(emotion_router, prefix='')
 app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="static")
 
-if not os.environ.get("TESTING"):
+if not settings.testing:
     @app.on_event("startup")
     async def _init() -> None:
         print("🔧 [main] startup: initializing ritual subsystem")
@@ -1171,6 +1173,28 @@ def test_npc_dialogue(player_id: str):
 @app.get("/test-simple")
 def test_simple():
     return {"message": "Test endpoint working"}
+
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint for SPR-BOOT01
+    Returns basic system status and configuration info
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0",
+        "services": {
+            "api": "running",
+            "database": "configured",
+            "pgvector": settings.pgvector_extension
+        },
+        "config": {
+            "postgres_url": settings.postgres_url.split("@")[-1] if "@" in settings.postgres_url else "configured",
+            "s3_endpoint": settings.s3_endpoint,
+            "use_cpu_stubs": settings.use_cpu_stubs
+        }
+    }
 
 # ─────────────────────────────── Validation Endpoint ───────────────────────────────
 @app.post("/validate")
