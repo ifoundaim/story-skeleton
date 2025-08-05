@@ -317,7 +317,7 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
     return SoulSeedResponse(
         playerId=player_id,
         soulSeedId=soul_seed_id,
-        initSceneTag="intro_001",
+        initSceneTag="tag_001",  # Updated to use 30-scene framework
     )
 
 
@@ -471,7 +471,7 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                             # Fallback to single NPC dialogue
                             npc_id = npcs_present[0] if npcs_present else "companion-001"
                             npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
-                            npc_dialogue = [{"npc_id": npc_id, "text": npc_text_dynamic}] if npc_text_dynamic else []
+                            npc_dialogue = [{"npc_id": str(npc_id), "text": npc_text_dynamic}] if npc_text_dynamic else []
                             dialogue_type = "single"
                         
                     except Exception as e:
@@ -479,14 +479,14 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                         # Fallback to single NPC dialogue
                         npc_id = npcs_present[0] if npcs_present else "companion-001"
                         npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
-                        npc_dialogue = [{"npc_id": npc_id, "text": npc_text_dynamic}] if npc_text_dynamic else []
+                        npc_dialogue = [{"npc_id": str(npc_id), "text": npc_text_dynamic}] if npc_text_dynamic else []
                         dialogue_type = "single"
                         
                 elif len(npcs_present) == 1:
                     # Single NPC dialogue
                     npc_id = npcs_present[0]
                     npc_text_dynamic = generate_npc_dialogue(npc_id, player_id)
-                    npc_dialogue = [{"npc_id": npc_id, "text": npc_text_dynamic}] if npc_text_dynamic else []
+                    npc_dialogue = [{"npc_id": str(npc_id), "text": npc_text_dynamic}] if npc_text_dynamic else []
                     dialogue_type = "single"
                     print(f"[DEBUG] Generated single NPC dialogue for {npc_id}")
                 else:
@@ -579,7 +579,7 @@ async def api_start(req: StartRequest) -> SceneResponse:
 
     print("⚠️ [main] falling back to static story.json")
     story = _read_json(str(STORY_FILE), {})
-    return _scene_to_response("intro_001", story, player_id="")
+    return _scene_to_response("tag_001", story, player_id="")  # Updated to use 30-scene framework
 
 
 def patch_story_tree(story_dict, player_name: str = "Adventurer"):

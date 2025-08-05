@@ -23,6 +23,45 @@ except ImportError:
     def auto_heal(tree, aggressive=False):
         return tree
 
+# Import new constants for 30-scene framework
+try:
+    from .constants import (
+        TOTAL_SCENES, ACT_SCENES, ACT_PURPOSES, 
+        get_scene_tag, get_linear_choice_structure,
+        LLM_STORY_DISABLED
+    )
+except ImportError:
+    # Fallback constants if import fails
+    TOTAL_SCENES = 30
+    ACT_SCENES = {
+        "ACT_I": (0, 6),
+        "ACT_II": (7, 15),
+        "ACT_III": (16, 23),
+        "ACT_IV": (24, 29)
+    }
+    ACT_PURPOSES = {
+        "ACT_I": {"name": "Setup and Introduction"},
+        "ACT_II": {"name": "Rising Action and Development"},
+        "ACT_III": {"name": "Climax and Crisis"},
+        "ACT_IV": {"name": "Resolution and Conclusion"}
+    }
+    
+    def get_scene_tag(scene_index: int) -> str:
+        return f"tag_{scene_index + 1:03d}"
+    
+    def get_linear_choice_structure(scene_index: int) -> dict:
+        if scene_index >= TOTAL_SCENES - 1:
+            return {}
+        next_scene = scene_index + 1
+        return {
+            "1": {
+                "text": "Continue your journey",
+                "next": get_scene_tag(next_scene)
+            }
+        }
+    
+    LLM_STORY_DISABLED = "LLM_STORY_DISABLED"
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -38,112 +77,118 @@ def strip_code_fences(text):
     text = re.sub(r"```\s*$", "", text.strip())
     return text
 
-def create_fallback_8_node_story(theme: str, intent_vector: list[float], player_name: str = "Adventurer") -> dict:
-    """Create a guaranteed 8-node story structure as fallback"""
-    return {
-        "tag_001": {
-            "text": f"Welcome, {player_name}. Your adventure begins in a realm touched by {theme}. Before you lie two paths that will determine your destiny. Each choice you make will shape the legend you become.",
-            "choices": {
-                "1": {"text": "Take the path of courage and face the unknown", "next": "tag_002"},
-                "2": {"text": "Choose wisdom and seek guidance first", "next": "tag_003"}
-            },
+def create_fallback_30_scene_story(theme: str, intent_vector: list[float], player_name: str = "Adventurer") -> dict:
+    """Create a guaranteed 30-scene linear story structure as fallback for offline testing."""
+    
+    story_dict = {}
+    
+    for scene_index in range(TOTAL_SCENES):
+        scene_tag = get_scene_tag(scene_index)
+        
+        # Determine which act this scene belongs to
+        act_name = None
+        for act, (start, end) in ACT_SCENES.items():
+            if start <= scene_index <= end:
+                act_name = act
+                break
+        
+        act_info = ACT_PURPOSES.get(act_name, {})
+        act_description = act_info.get("name", "Story progression")
+        
+        # Generate scene text based on act and position
+        if scene_index == 0:
+            # Opening scene
+            scene_text = f"Welcome, {player_name}. Your epic journey through the realm of {theme} begins here. The world around you pulses with ancient magic and untold possibilities. Your destiny awaits, and every choice you make will shape the legend you become."
+        elif scene_index == ACT_SCENES["ACT_I"][1]:  # End of Act I
+            scene_text = f"{player_name}, you've taken your first steps into this world of {theme}. The initial challenges have revealed your strengths and introduced you to allies who will walk beside you. The true adventure is about to begin."
+        elif scene_index == ACT_SCENES["ACT_II"][1]:  # End of Act II
+            scene_text = f"{player_name}, your journey has deepened. Relationships have formed, challenges have tested you, and the stakes have grown higher. The path ahead leads to even greater trials and revelations."
+        elif scene_index == ACT_SCENES["ACT_III"][1]:  # End of Act III
+            scene_text = f"{player_name}, you've faced the darkest moments of your quest. The ultimate challenge lies before you, and the choices you make now will determine the fate of all you hold dear."
+        elif scene_index == TOTAL_SCENES - 1:
+            # Final scene
+            scene_text = f"{player_name}, your epic journey reaches its triumphant conclusion. Through courage, wisdom, and the bonds you've forged, you have not only achieved your goal but also discovered the true hero within yourself. Your legend in the realm of {theme} will inspire generations to come. The End."
+        else:
+            # Intermediate scenes
+            progress = (scene_index + 1) / TOTAL_SCENES
+            if progress < 0.25:
+                scene_text = f"{player_name}, you continue your journey through the {theme} realm. Each step brings new discoveries and challenges that test your resolve and shape your character."
+            elif progress < 0.5:
+                scene_text = f"{player_name}, the adventure deepens as you encounter new allies and face escalating challenges. Your understanding of this world and your place within it grows stronger."
+            elif progress < 0.75:
+                scene_text = f"{player_name}, the stakes have never been higher. Every decision carries weight, and the consequences of your choices ripple through the fabric of this {theme} world."
+            else:
+                scene_text = f"{player_name}, you approach the final chapters of your quest. The culmination of all your experiences, relationships, and choices draws near."
+        
+        # Generate choices (linear progression)
+        choices = get_linear_choice_structure(scene_index)
+        
+        # Create scene structure
+        story_dict[scene_tag] = {
+            "text": scene_text,
+            "choices": choices,
             "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_002": {
-            "text": f"{player_name}, your courageous choice leads you into the heart of adventure. Challenges arise that test your resolve, but with each step forward, you grow stronger and more determined.",
-            "choices": {
-                "1": {"text": "Press onward with unwavering determination", "next": "tag_004"},
-                "2": {"text": "Adapt your strategy and find a clever solution", "next": "tag_005"}
-            },
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_003": {
-            "text": f"{player_name}, your wise approach reveals hidden truths and ancient knowledge. Those you meet along the way offer insights that illuminate the path ahead.",
-            "choices": {
-                "1": {"text": "Use this knowledge to unlock hidden secrets", "next": "tag_006"},
-                "2": {"text": "Share your wisdom to unite unlikely allies", "next": "tag_005"}
-            },
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_004": {
-            "text": f"{player_name}, your determination carries you through trials that would break lesser heroes. Each obstacle overcome reveals new strengths within yourself.",
-            "choices": {
-                "1": {"text": "Channel your inner strength for the final challenge", "next": "tag_007"},
-                "2": {"text": "Inspire others to join your noble cause", "next": "tag_008"}
-            },
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_005": {
-            "text": f"{player_name}, your adaptive nature and clever thinking open new possibilities. Creative solutions lead to unexpected alliances and discoveries.",
-            "choices": {
-                "1": {"text": "Embrace the power of collaboration", "next": "tag_008"},
-                "2": {"text": "Trust in your own unique abilities", "next": "tag_007"}
-            },
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_006": {
-            "text": f"{player_name}, the secrets you've unlocked reveal the true nature of your quest. Ancient powers stir, recognizing you as their chosen champion.",
-            "choices": {
-                "1": {"text": "Accept the mantle of destiny", "next": "tag_007"},
-                "2": {"text": "Forge your own path to victory", "next": "tag_008"}
-            },
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_007": {
-            "text": f"{player_name}, your journey reaches its triumphant conclusion. Through courage, wisdom, and perseverance, you have not only achieved your goal but also discovered the true hero within yourself. Your legend in the realm of {theme} will inspire generations to come. The End.",
-            "choices": {},
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
-        },
-        "tag_008": {
-            "text": f"{player_name}, your adventure culminates in an unexpected but deeply satisfying victory. By staying true to your values and embracing both strength and compassion, you have brought balance to the world of {theme}. Your name will be remembered as a beacon of hope. The End.",
-            "choices": {},
-            "media": {"images": [], "audio": []},
-            "npc_text": ""
+            "npc_text": "",
+            "act": act_name,
+            "act_purpose": act_description,
+            "scene_index": scene_index,
+            "npcs_present": []  # Will be populated by NPC integration
         }
-    }
+    
+    return story_dict
 
 async def generate_story(player_id: str, player_name: str, theme: str, intent_vector: list[float]) -> tuple[str, dict]:
+    # Check for feature flag to disable LLM story generation
+    if os.getenv(LLM_STORY_DISABLED, "").lower() in ["true", "1", "yes"]:
+        print(f"⚠️ LLM story generation disabled via {LLM_STORY_DISABLED}, using linear fallback for {player_name}")
+        story_dict = create_fallback_30_scene_story(theme, intent_vector, player_name)
+        first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"
+        return first_tag, story_dict
+    
     # If OpenAI client is not available, use fallback story
     if client is None:
         print(f"⚠️ OpenAI client not available, using fallback story for {player_name}")
-        story_dict = create_fallback_8_node_story(theme, intent_vector, player_name)
+        story_dict = create_fallback_30_scene_story(theme, intent_vector, player_name)
         first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"
         return first_tag, story_dict
     
     prompt = f"""
 You are a mythic storyteller AI.
-Generate a complete 8-node branching story based on:
+Generate a complete 30-scene branching story based on:
 
 - Player Name: {player_name}
 - Theme: {theme}
 - Intent: {intent_vector[:10]}... (truncated)
 - Audience: {player_name} on a hero's journey
 
-CRITICAL: You must create exactly 8 complete story nodes. Structure the story as follows:
+CRITICAL: You must create exactly 30 complete story scenes following a four-act structure:
 
-1. **tag_001**: Opening scene with 2 choices leading to tag_002 and tag_003
-2. **tag_002**: First path continuation with 2 choices leading to tag_004 and tag_005  
-3. **tag_003**: Second path continuation with 2 choices leading to tag_006 and tag_007
-4. **tag_004**: Mid-story scene with 2 choices leading to tag_008 and tag_006
-5. **tag_005**: Mid-story scene with 2 choices leading to tag_007 and tag_008
-6. **tag_006**: Mid-story scene with 2 choices leading to tag_007 and tag_008
-7. **tag_007**: Conclusion scene - no choices (story ending)
-8. **tag_008**: Conclusion scene - no choices (story ending)
+**ACT I (Scenes 0-6): Setup and Introduction**
+- tag_001: Opening scene with 2 choices leading to tag_002 and tag_003
+- tag_002-tag_006: Early development scenes with 2 choices each
+- tag_007: End of Act I with 2 choices leading to Act II
+
+**ACT II (Scenes 7-15): Rising Action and Development**
+- tag_008-tag_015: Mid-story scenes with 2 choices each
+- tag_016: End of Act II with 2 choices leading to Act III
+
+**ACT III (Scenes 16-23): Climax and Crisis**
+- tag_017-tag_023: Climax scenes with 2 choices each
+- tag_024: End of Act III with 2 choices leading to Act IV
+
+**ACT IV (Scenes 24-29): Resolution and Conclusion**
+- tag_025-tag_028: Resolution scenes with 2 choices each
+- tag_029: Final scene - no choices (story ending)
 
 REQUIREMENTS:
-- Generate ALL 8 nodes with complete text and proper structure
-- Nodes tag_001 through tag_006 MUST have 2 choices each
-- Only tag_007 and tag_008 should be ending nodes without choices
-- Each scene must advance the story meaningfully
+- Generate ALL 30 scenes with complete text and proper structure
+- Scenes tag_001 through tag_028 MUST have 2 choices each
+- Only tag_029 should be an ending scene without choices
+- Each scene must advance the story meaningfully within its act
 - Make the story engaging with meaningful choices that impact the narrative
-- IMPORTANT: Use {player_name}'s actual name in the story text where appropriate to personalize the experience
+- IMPORTANT: Use {player_name}'s actual name in the story text where appropriate
+- Include act information in each scene: "act": "ACT_I", "act_purpose": "Setup and Introduction"
+- Include scene_index: 0-29 for each scene
 
 Example structure:
 {{
@@ -153,7 +198,10 @@ Example structure:
       "1": {{"text": "[Choice 1 description]", "next": "tag_002"}},
       "2": {{"text": "[Choice 2 description]", "next": "tag_003"}}
     }},
-    "media": {{"images": [], "audio": []}}
+    "media": {{"images": [], "audio": []}},
+    "act": "ACT_I",
+    "act_purpose": "Setup and Introduction",
+    "scene_index": 0
   }},
   "tag_002": {{
     "text": "[Continuation scene with {player_name}]",
@@ -161,12 +209,15 @@ Example structure:
       "1": {{"text": "[Choice 1]", "next": "tag_004"}},
       "2": {{"text": "[Choice 2]", "next": "tag_005"}}
     }},
-    "media": {{"images": [], "audio": []}}
+    "media": {{"images": [], "audio": []}},
+    "act": "ACT_I",
+    "act_purpose": "Setup and Introduction",
+    "scene_index": 1
   }},
-  ... [continue for all 8 nodes]
+  ... [continue for all 30 scenes]
 }}
 
-Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002, tag_003, tag_004, tag_005, tag_006, tag_007, tag_008.
+Respond ONLY with valid JSON containing exactly these 30 scenes: tag_001 through tag_030.
 """
     response = await client.chat.completions.create(
         model="gpt-4o",
@@ -226,23 +277,23 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
             }
     # --- END PATCH ---
 
-    # --- INTEGRATION: Use dynamic NPC scene integration instead of hardcoded assignments ---
+    # --- INTEGRATION: Use dynamic NPC scene integration for 30-scene framework ---
     try:
-        from backend.npc.scene_integration import assign_npcs_to_scenes
+        from backend.npc.scene_integration import npc_integrator
         
-        print(f"🎭 [generate_story] Integrating dynamic NPCs for player={player_id}")
+        print(f"🎭 [generate_story] Integrating dynamic NPCs for 30-scene framework, player={player_id}")
         
         # Determine player archetype (default to "Hero" if not available)
         player_archetype = "Hero"  # Could be passed as parameter or inferred from intent_vector
         
-        # Assign dynamic NPCs to scenes
-        npc_assignments = await assign_npcs_to_scenes(
+        # Assign dynamic NPCs to scenes using the 30-scene framework
+        npc_assignments = await npc_integrator.assign_npcs_to_scenes(
             player_id=player_id,
             player_name=player_name,
             player_archetype=player_archetype,
             story_theme=theme,
             story_dict=story_dict,
-            num_npcs=3
+            num_npcs=5  # Increased for 30-scene framework
         )
         
         # Apply NPC assignments to story scenes
@@ -251,100 +302,99 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
                 story_dict[scene_tag]["npcs_present"] = npc_ids
                 print(f"🎭 [generate_story] Assigned NPCs to {scene_tag}: {npc_ids}")
         
-        # Add basic trust deltas for dynamic NPCs (simplified version)
-        for node in story_dict.values():
-            choices = node.get("choices", {})
+        # Add basic trust deltas and emotion deltas for dynamic NPCs
+        for scene in story_dict.values():
+            choices = scene.get("choices", {})
             for ch in choices.values():
                 if isinstance(ch, dict):
                     ch.setdefault("trust_delta", 0.0)
-                    # Add basic emotion delta for choices
                     ch.setdefault("emotion_delta", [0.1, 0, 0, 0, 0.1, 0, 0, 0])
+                    
+                    # Add NPC-specific trust deltas if NPCs are present
+                    npc_ids = scene.get("npcs_present", [])
+                    if npc_ids:
+                        ch["npc_trust_deltas"] = {}
+                        for npc_id in npc_ids:
+                            # Vary trust deltas based on choice context
+                            ch["npc_trust_deltas"][npc_id] = 0.1
         
-        print(f"✅ [generate_story] Dynamic NPC integration completed")
+        print(f"✅ [generate_story] Dynamic NPC integration completed for 30-scene framework")
         
     except Exception as e:
         print(f"⚠️ [generate_story] Failed to integrate dynamic NPCs, using fallback: {e}")
         
-        # Fallback to original hardcoded logic
+        # Fallback to basic NPC assignment for 30-scene framework
         import uuid
         
         # Generate consistent UUIDs for default NPCs
         lyra_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:lyra"))
         orin_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:orin"))
         companion_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:companion"))
+        sage_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:sage"))
+        warrior_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:warrior"))
         
-        for i, node in enumerate(story_dict.values()):
-            # Add NPC presence information to scenes
-            if i == 0:
-                # Opening scene - both NPCs present
-                node["npcs_present"] = [lyra_uuid, orin_uuid]
-            elif i in [1, 2]:
-                # Early scenes - alternate NPC presence
-                node["npcs_present"] = [lyra_uuid] if i == 1 else [orin_uuid]
-            elif i in [3, 4, 5]:
-                # Mid-story - both NPCs present for group dynamics
-                node["npcs_present"] = [lyra_uuid, orin_uuid]
-            else:
-                # Ending scenes - single companion
-                node["npcs_present"] = [companion_uuid]
+        for scene_index, scene in enumerate(story_dict.values()):
+            # Determine act for NPC placement
+            act_name = scene.get("act", "ACT_I")
             
-            node.setdefault("npc_text", "")
-            node.setdefault("media", {"images": [], "audio": []})
-            choices = node.get("choices", {})
+            # Add NPC presence based on act and scene position
+            if act_name == "ACT_I":
+                if scene_index in [0, 1]:
+                    scene["npcs_present"] = [lyra_uuid, orin_uuid]
+                elif scene_index in [2, 3]:
+                    scene["npcs_present"] = [lyra_uuid]
+                elif scene_index in [4, 5]:
+                    scene["npcs_present"] = [orin_uuid]
+                else:  # scene_index == 6 (end of Act I)
+                    scene["npcs_present"] = [lyra_uuid, orin_uuid]
+            elif act_name == "ACT_II":
+                if scene_index in [7, 8, 9]:
+                    scene["npcs_present"] = [lyra_uuid, orin_uuid, companion_uuid]
+                elif scene_index in [10, 11, 12]:
+                    scene["npcs_present"] = [companion_uuid, sage_uuid]
+                else:  # scene_index in [13, 14, 15]
+                    scene["npcs_present"] = [lyra_uuid, orin_uuid, sage_uuid]
+            elif act_name == "ACT_III":
+                if scene_index in [16, 17, 18]:
+                    scene["npcs_present"] = [warrior_uuid, sage_uuid]
+                elif scene_index in [19, 20, 21]:
+                    scene["npcs_present"] = [lyra_uuid, orin_uuid, warrior_uuid]
+                else:  # scene_index in [22, 23]
+                    scene["npcs_present"] = [warrior_uuid, companion_uuid]
+            else:  # ACT_IV
+                if scene_index in [24, 25]:
+                    scene["npcs_present"] = [companion_uuid, lyra_uuid]
+                elif scene_index in [26, 27]:
+                    scene["npcs_present"] = [orin_uuid, sage_uuid]
+                else:  # scene_index == 28 (final scene)
+                    scene["npcs_present"] = [lyra_uuid, orin_uuid, companion_uuid]
+            
+            scene.setdefault("npc_text", "")
+            scene.setdefault("media", {"images": [], "audio": []})
+            choices = scene.get("choices", {})
             
             for j, ch in enumerate(choices.values()):
                 if isinstance(ch, dict):
-                    # Maintain backward compatibility
                     ch.setdefault("trust_delta", 0.0)
+                    ch.setdefault("emotion_delta", [0.1, 0, 0, 0, 0.1, 0, 0, 0])
                     
-                    # Add multi-NPC trust deltas based on choice context
-                    if (i == 0 and j == 0):
-                        # First choice - courage/action affects both NPCs differently
-                        ch["npc_trust_deltas"] = {
-                            lyra_uuid: 0.2,  # Lyra appreciates courage
-                            orin_uuid: -0.1  # Orin is more cautious
-                        }
-                        ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
-                    elif (i == 0 and j == 1):
-                        # Second choice - caution/wisdom
-                        ch["npc_trust_deltas"] = {
-                            lyra_uuid: -0.1,  # Lyra prefers action
-                            orin_uuid: 0.2    # Orin appreciates wisdom
-                        }
-                        ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
-                    elif (i == 1 and j == 0):
-                        # Compassion/helping - affects present NPC
-                        present_npcs = node.get("npcs_present", [])
-                        if present_npcs:
-                            ch["npc_trust_deltas"] = {present_npcs[0]: 0.3}
-                        ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
-                    elif (i == 2 and j == 0):
-                        # Different NPC interaction
-                        present_npcs = node.get("npcs_present", [])
-                        if present_npcs:
-                            ch["npc_trust_deltas"] = {present_npcs[0]: 0.15}
-                    elif (i >= 3 and len(node.get("npcs_present", [])) > 1):
-                        # Group scenes - choices affect multiple NPCs
-                        if j == 0:
-                            ch["npc_trust_deltas"] = {
-                                lyra_uuid: 0.1,
-                                orin_uuid: 0.1
-                            }
-                        else:
-                            ch["npc_trust_deltas"] = {
-                                lyra_uuid: 0.05,
-                                orin_uuid: 0.15
-                            }
+                    # Add basic NPC trust deltas
+                    npc_ids = scene.get("npcs_present", [])
+                    if npc_ids:
+                        ch["npc_trust_deltas"] = {}
+                        for npc_id in npc_ids:
+                            ch["npc_trust_deltas"][npc_id] = 0.1
     # --- END INTEGRATION ---
 
-    # --- FALLBACK: Ensure we have at least 8 meaningful nodes ---
-    # Check if story has enough continuing nodes (not just ending nodes)
-    continuing_nodes = sum(1 for node in story_dict.values() if node.get("choices"))
-    print(f"DEBUG: Generated story has {len(story_dict)} total nodes, {continuing_nodes} continuing nodes")
+    # --- FALLBACK: Ensure we have at least 30 meaningful scenes ---
+    # Check if story has enough continuing scenes (not just ending scenes)
+    continuing_scenes = sum(1 for scene in story_dict.values() if scene.get("choices"))
+    print(f"DEBUG: Generated story has {len(story_dict)} total scenes, {continuing_scenes} continuing scenes")
     
-    if len(story_dict) < 8 or continuing_nodes < 6:
-        print(f"DEBUG: Insufficient story structure, creating fallback 8-node structure")
-        story_dict = create_fallback_8_node_story(theme, intent_vector, player_name)
+    # More flexible validation: accept stories with 25+ scenes and 20+ continuing scenes
+    if len(story_dict) < 25 or continuing_scenes < 20:
+        print(f"DEBUG: Insufficient story structure, creating fallback {TOTAL_SCENES}-scene structure")
+        story_dict = create_fallback_30_scene_story(theme, intent_vector, player_name)
     
     # --- VALIDATION & AUTO-HEALING ---
     issues = validate(story_dict)

@@ -267,6 +267,72 @@
 
 ---
 
+### ✅ 30-Scene Four-Act Framework & Linear Fallback (SPR-ST02) - COMPLETED
+**Structured 30-Scene Narrative with Linear Fallback Mode**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Replaced hardcoded 8-scene narrative with structured 30-scene four-act framework
+  - Act I (scenes 0-6): Setup and Introduction with key NPC introductions
+  - Act II (scenes 7-15): Rising Action and Development with relationship building
+  - Act III (scenes 16-23): Climax and Crisis with major confrontations
+  - Act IV (scenes 24-29): Resolution and Conclusion with satisfying endings
+  - Linear fallback mode for stable offline testing and UI validation
+  - Feature flag (`LLM_STORY_DISABLED`) for easy toggling between dynamic and fallback modes
+  - Full integration with NPCSceneIntegrator for progressive NPC placement
+  - Comprehensive unit tests for framework validation
+
+**Technical Implementation:**
+- **Constants:** `purpose_agents/constants.py` - 30-scene framework constants and utilities
+- **Story Generation:** `purpose_agents/generate_story.py` - Updated with 30-scene scaffold and fallback
+- **Linear Fallback:** `create_fallback_30_scene_story()` - Guaranteed linear progression for testing
+- **Feature Flag:** `LLM_STORY_DISABLED` environment variable for mode switching
+- **NPC Integration:** Full integration with `NPCSceneIntegrator` for dynamic NPC placement
+- **Testing:** `tests/test_30_scene_framework.py` - Comprehensive framework validation tests
+- **Documentation:** Updated README with framework explanation and usage guide
+
+**Framework Structure:**
+- **Total Scenes:** 30 scenes (tag_001 through tag_030)
+- **Act Distribution:** 7-9-8-6 scenes across four acts
+- **Choice Structure:** Linear progression (scene N → scene N+1) in fallback mode
+- **NPC Placement:** Progressive introduction aligned with act purposes
+- **Scene Metadata:** Each scene includes act, act_purpose, and scene_index fields
+
+**Act Purposes:**
+- **Act I (Setup):** Introduce protagonist, establish conflict, introduce key NPCs
+- **Act II (Development):** Deepen relationships, escalate conflicts, introduce complications
+- **Act III (Climax):** Present ultimate challenges, force critical decisions, reveal major twists
+- **Act IV (Resolution):** Resolve conflicts, show character growth, provide satisfying conclusions
+
+**Linear Fallback Features:**
+- **Guaranteed Structure:** Always generates exactly 30 scenes with proper act assignments
+- **Sequential Progression:** Every choice points to the next sequential scene
+- **Offline Testing:** Enables UI validation and testing without LLM dependencies
+- **Feature Flag Control:** `LLM_STORY_DISABLED=true` enables fallback mode
+- **NPC Integration:** Maintains NPC assignment structure for testing
+
+**Usage:**
+```bash
+# Enable linear fallback mode for testing
+export LLM_STORY_DISABLED=true
+
+# Run tests to validate framework
+python -m pytest tests/test_30_scene_framework.py -v
+
+# Generate story (will use fallback if flag is set)
+python -c "from purpose_agents.generate_story import create_fallback_30_scene_story; print(create_fallback_30_scene_story('fantasy', [0.1, 0.2, 0.3], 'TestPlayer'))"
+```
+
+**Acceptance Criteria Met:**
+- ✅ Successfully generates structured 30-scene arcs in both dynamic and fallback modes
+- ✅ All NPC integrations function as expected with progressive placement
+- ✅ Linear fallback mode reliably routes choices sequentially for offline/UI testing
+- ✅ Feature flag provides easy toggling between dynamic and fallback modes
+- ✅ All unit tests pass with comprehensive framework validation
+- ✅ Documentation clearly explains the new 30-scene narrative structure
+
+---
+
 ### ✅ Memory Recap System Sprint (MEM01) - COMPLETED
 **Short-Term Memory Recap System for Codex**
 - **Status:** ✅ **COMPLETED** 
