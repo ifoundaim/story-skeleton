@@ -202,6 +202,52 @@
 
 ---
 
+### ✅ Dynamic NPC Scene Integration (SPR-NPC08) - COMPLETED
+**Intelligent NPC Placement in Story Scenes**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Automatic integration of dynamically generated NPCs into story scenes
+  - Role-based placement (Mentors early, Rivals mid-story, etc.)
+  - Progressive introduction (NPCs appear gradually across acts)
+  - Narrative hook matching (NPCs placed in contextually appropriate scenes)
+  - Replacement of hardcoded NPC assignments with dynamic logic
+  - Full 8-scene story structure with proper NPC integration
+  - Fallback to hardcoded logic if dynamic integration fails
+
+**Technical Implementation:**
+- **Core Integration:** `backend/npc/scene_integration.py` - `NPCSceneIntegrator` class
+- **Story Generation:** `purpose_agents/generate_story.py` - Dynamic NPC assignment integration
+- **Scene Response:** `backend/main.py` - `_scene_to_response()` with dynamic NPC retrieval
+- **Assignment Logic:** Role-based, progressive introduction, and narrative hook matching
+- **Testing:** `backend/tests/test_npc_scene_integration.py` - Comprehensive test suite
+- **Documentation:** `docs/SPR-NPC08_SCENE_INTEGRATION.md` - Detailed integration guide
+
+**Scene Integration Features:**
+- **Dynamic Assignment:** `assign_npcs_to_scenes()` generates and assigns NPCs to scenes
+- **Role-Based Placement:** Mentors in Act I, Rivals in Act II, etc.
+- **Progressive Introduction:** NPCs introduced gradually across story acts
+- **Narrative Hook Matching:** NPCs placed in scenes matching their narrative hooks
+- **Scene Response Integration:** `get_scene_npcs()` retrieves dynamic NPCs for scenes
+- **Backward Compatibility:** Falls back to hardcoded logic if dynamic integration fails
+- **Full Story Structure:** Ensures complete 8-scene stories with proper NPC integration
+
+**API Integration:**
+- **Story Generation:** Dynamic NPC assignments applied during story creation
+- **Scene Response:** Dynamic NPC retrieval in `_scene_to_response()` function
+- **NPC Profiles:** Automatic NPC profile creation for dynamically assigned NPCs
+- **Trust Management:** Basic trust deltas applied for dynamic NPC interactions
+
+**Acceptance Criteria Met:**
+- ✅ Dynamically generated NPCs automatically appear in relevant scenes
+- ✅ NPC introductions align with narrative roles and progressive introduction rules
+- ✅ `npcs_present` data consistently populated with dynamic NPC assignments
+- ✅ All NPC IDs in scenes have corresponding NPC profiles
+- ✅ Full 8-scene story structure maintained with proper NPC integration
+- ✅ Fallback logic ensures system stability if dynamic integration fails
+
+---
+
 ### ✅ Soulmap Integration Sprint (SM01) - COMPLETED
 **Player Choice Data Capture & Real-time Soulmap Updates**
 - **Status:** ✅ **COMPLETED** 
