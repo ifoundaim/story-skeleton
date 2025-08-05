@@ -226,80 +226,116 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
             }
     # --- END PATCH ---
 
-    # --- PATCH: Ensure npc_text, trust_delta, and media in each node/choice ---
-    import uuid
-    
-    # Generate consistent UUIDs for default NPCs
-    lyra_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:lyra"))
-    orin_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:orin"))
-    companion_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:companion"))
-    
-    for i, node in enumerate(story_dict.values()):
-        # Add NPC presence information to scenes
-        if i == 0:
-            # Opening scene - both NPCs present
-            node["npcs_present"] = [lyra_uuid, orin_uuid]
-        elif i in [1, 2]:
-            # Early scenes - alternate NPC presence
-            node["npcs_present"] = [lyra_uuid] if i == 1 else [orin_uuid]
-        elif i in [3, 4, 5]:
-            # Mid-story - both NPCs present for group dynamics
-            node["npcs_present"] = [lyra_uuid, orin_uuid]
-        else:
-            # Ending scenes - single companion
-            node["npcs_present"] = [companion_uuid]
+    # --- INTEGRATION: Use dynamic NPC scene integration instead of hardcoded assignments ---
+    try:
+        from backend.npc.scene_integration import assign_npcs_to_scenes
         
-        node.setdefault("npc_text", "")
-        node.setdefault("media", {"images": [], "audio": []})
-        choices = node.get("choices", {})
+        print(f"🎭 [generate_story] Integrating dynamic NPCs for player={player_id}")
         
-        for j, ch in enumerate(choices.values()):
-            if isinstance(ch, dict):
-                # Maintain backward compatibility
-                ch.setdefault("trust_delta", 0.0)
-                
-                # Add multi-NPC trust deltas based on choice context
-                if (i == 0 and j == 0):
-                    # First choice - courage/action affects both NPCs differently
-                    ch["npc_trust_deltas"] = {
-                        lyra_uuid: 0.2,  # Lyra appreciates courage
-                        orin_uuid: -0.1  # Orin is more cautious
-                    }
-                    ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
-                    # Remove soulmap_delta - will be inferred when choice is made
-                elif (i == 0 and j == 1):
-                    # Second choice - caution/wisdom
-                    ch["npc_trust_deltas"] = {
-                        lyra_uuid: -0.1,  # Lyra prefers action
-                        orin_uuid: 0.2    # Orin appreciates wisdom
-                    }
-                    ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
-                    # Remove soulmap_delta - will be inferred when choice is made
-                elif (i == 1 and j == 0):
-                    # Compassion/helping - affects present NPC
-                    present_npcs = node.get("npcs_present", [])
-                    if present_npcs:
-                        ch["npc_trust_deltas"] = {present_npcs[0]: 0.3}
-                    ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
-                    # Remove soulmap_delta - will be inferred when choice is made
-                elif (i == 2 and j == 0):
-                    # Different NPC interaction
-                    present_npcs = node.get("npcs_present", [])
-                    if present_npcs:
-                        ch["npc_trust_deltas"] = {present_npcs[0]: 0.15}
-                elif (i >= 3 and len(node.get("npcs_present", [])) > 1):
-                    # Group scenes - choices affect multiple NPCs
-                    if j == 0:
+        # Determine player archetype (default to "Hero" if not available)
+        player_archetype = "Hero"  # Could be passed as parameter or inferred from intent_vector
+        
+        # Assign dynamic NPCs to scenes
+        npc_assignments = await assign_npcs_to_scenes(
+            player_id=player_id,
+            player_name=player_name,
+            player_archetype=player_archetype,
+            story_theme=theme,
+            story_dict=story_dict,
+            num_npcs=3
+        )
+        
+        # Apply NPC assignments to story scenes
+        for scene_tag, npc_ids in npc_assignments.items():
+            if scene_tag in story_dict:
+                story_dict[scene_tag]["npcs_present"] = npc_ids
+                print(f"🎭 [generate_story] Assigned NPCs to {scene_tag}: {npc_ids}")
+        
+        # Add basic trust deltas for dynamic NPCs (simplified version)
+        for node in story_dict.values():
+            choices = node.get("choices", {})
+            for ch in choices.values():
+                if isinstance(ch, dict):
+                    ch.setdefault("trust_delta", 0.0)
+                    # Add basic emotion delta for choices
+                    ch.setdefault("emotion_delta", [0.1, 0, 0, 0, 0.1, 0, 0, 0])
+        
+        print(f"✅ [generate_story] Dynamic NPC integration completed")
+        
+    except Exception as e:
+        print(f"⚠️ [generate_story] Failed to integrate dynamic NPCs, using fallback: {e}")
+        
+        # Fallback to original hardcoded logic
+        import uuid
+        
+        # Generate consistent UUIDs for default NPCs
+        lyra_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:lyra"))
+        orin_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:orin"))
+        companion_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, f"default:companion"))
+        
+        for i, node in enumerate(story_dict.values()):
+            # Add NPC presence information to scenes
+            if i == 0:
+                # Opening scene - both NPCs present
+                node["npcs_present"] = [lyra_uuid, orin_uuid]
+            elif i in [1, 2]:
+                # Early scenes - alternate NPC presence
+                node["npcs_present"] = [lyra_uuid] if i == 1 else [orin_uuid]
+            elif i in [3, 4, 5]:
+                # Mid-story - both NPCs present for group dynamics
+                node["npcs_present"] = [lyra_uuid, orin_uuid]
+            else:
+                # Ending scenes - single companion
+                node["npcs_present"] = [companion_uuid]
+            
+            node.setdefault("npc_text", "")
+            node.setdefault("media", {"images": [], "audio": []})
+            choices = node.get("choices", {})
+            
+            for j, ch in enumerate(choices.values()):
+                if isinstance(ch, dict):
+                    # Maintain backward compatibility
+                    ch.setdefault("trust_delta", 0.0)
+                    
+                    # Add multi-NPC trust deltas based on choice context
+                    if (i == 0 and j == 0):
+                        # First choice - courage/action affects both NPCs differently
                         ch["npc_trust_deltas"] = {
-                            lyra_uuid: 0.1,
-                            orin_uuid: 0.1
+                            lyra_uuid: 0.2,  # Lyra appreciates courage
+                            orin_uuid: -0.1  # Orin is more cautious
                         }
-                    else:
+                        ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
+                    elif (i == 0 and j == 1):
+                        # Second choice - caution/wisdom
                         ch["npc_trust_deltas"] = {
-                            lyra_uuid: 0.05,
-                            orin_uuid: 0.15
+                            lyra_uuid: -0.1,  # Lyra prefers action
+                            orin_uuid: 0.2    # Orin appreciates wisdom
                         }
-    # --- END PATCH ---
+                        ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
+                    elif (i == 1 and j == 0):
+                        # Compassion/helping - affects present NPC
+                        present_npcs = node.get("npcs_present", [])
+                        if present_npcs:
+                            ch["npc_trust_deltas"] = {present_npcs[0]: 0.3}
+                        ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
+                    elif (i == 2 and j == 0):
+                        # Different NPC interaction
+                        present_npcs = node.get("npcs_present", [])
+                        if present_npcs:
+                            ch["npc_trust_deltas"] = {present_npcs[0]: 0.15}
+                    elif (i >= 3 and len(node.get("npcs_present", [])) > 1):
+                        # Group scenes - choices affect multiple NPCs
+                        if j == 0:
+                            ch["npc_trust_deltas"] = {
+                                lyra_uuid: 0.1,
+                                orin_uuid: 0.1
+                            }
+                        else:
+                            ch["npc_trust_deltas"] = {
+                                lyra_uuid: 0.05,
+                                orin_uuid: 0.15
+                            }
+    # --- END INTEGRATION ---
 
     # --- FALLBACK: Ensure we have at least 8 meaningful nodes ---
     # Check if story has enough continuing nodes (not just ending nodes)

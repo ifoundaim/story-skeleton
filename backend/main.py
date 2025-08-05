@@ -395,6 +395,33 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 # Get NPCs present in scene
                 npcs_present = scene.get("npcs_present", [])
                 
+                # INTEGRATION: Use dynamic NPC scene integration
+                try:
+                    from npc.scene_integration import get_scene_npcs
+                    
+                    # Get dynamically assigned NPCs for this scene
+                    dynamic_npcs = get_scene_npcs(player_id, tag)
+                    
+                    # Use dynamic NPCs if available, otherwise fall back to story NPCs
+                    if dynamic_npcs:
+                        npcs_present = dynamic_npcs
+                        print(f"[DEBUG] Using dynamic NPCs for scene {tag}: {npcs_present}")
+                    else:
+                        print(f"[DEBUG] Using story NPCs for scene {tag}: {npcs_present}")
+                    
+                    # Ensure NPC profiles exist for all present NPCs
+                    if npcs_present:
+                        try:
+                            from npc.profile_seed import ensure_npc_profile
+                            ensure_npc_profile(scene, player_id)
+                            print(f"[DEBUG] Ensured NPC profiles for scene {tag}")
+                        except Exception as e:
+                            print(f"[DEBUG] Failed to ensure NPC profiles: {e}")
+                            
+                except Exception as e:
+                    print(f"[DEBUG] Failed to get dynamic NPCs, using fallback: {e}")
+                    # Continue with existing npcs_present logic
+                
                 # If no npcs_present defined, check if there are active companions
                 if not npcs_present:
                     try:
