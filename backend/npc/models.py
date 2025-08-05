@@ -20,4 +20,13 @@ class NPC(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(String, nullable=False)
     baseline_trust = Column(Float, nullable=False, default=0.0)
-    trust = Column(Float, nullable=False, default=0.0) 
+    trust = Column(Float, nullable=False, default=0.0)
+    # Extended metadata for dynamic NPC generation
+    role = Column(String, nullable=True)  # e.g., 'Mentor', 'Rival', 'Companion'
+    archetype = Column(String, nullable=True)  # e.g., 'Sage', 'Warrior', 'Trickster'
+    personality_traits = Column(JSON, nullable=True, default=list)  # List of personality traits
+    narrative_hooks = Column(JSON, nullable=True, default=list)  # List of story hooks
+    relationship_to_player = Column(String, nullable=True)  # How NPC relates to player
+    motivation = Column(String, nullable=True)  # What drives the NPC
+    secrets = Column(JSON, nullable=True, default=list)  # List of secrets
+    generated = Column(String, nullable=True)  # Flag to indicate if dynamically generated 

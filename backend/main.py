@@ -321,6 +321,153 @@ def create_player_profile(payload: PlayerProfileIn) -> SoulSeedResponse:
     )
 
 
+# ────────────────────────── dynamic NPC generation ──────────────────────────────
+class NPCGenerationRequest(BaseModel):
+    player_id: str
+    player_name: str
+    player_archetype: str
+    story_theme: str
+    num_npcs: int = Field(default=3, ge=1, le=10)
+
+class NPCGenerationResponse(BaseModel):
+    success: bool
+    npcs_generated: int
+    npc_ids: list[str]
+    message: str
+
+@app.post("/npc/generate", response_model=NPCGenerationResponse)
+async def generate_npcs(payload: NPCGenerationRequest) -> NPCGenerationResponse:
+    """Generate dynamic NPCs for a story based on player archetype and soul map."""
+    try:
+        from npc.dynamic_generator import generate_story_npcs
+        
+        print(f"🎭 [main] Generating NPCs for player={payload.player_id}, archetype={payload.player_archetype}")
+        
+        # Generate NPCs using the dynamic generator
+        generated_npcs = await generate_story_npcs(
+            player_id=payload.player_id,
+            player_name=payload.player_name,
+            player_archetype=payload.player_archetype,
+            story_theme=payload.story_theme,
+            num_npcs=payload.num_npcs
+        )
+        
+        npc_ids = [str(npc.id) for npc in generated_npcs]
+        
+        print(f"✅ [main] Generated {len(generated_npcs)} NPCs: {npc_ids}")
+        
+        return NPCGenerationResponse(
+            success=True,
+            npcs_generated=len(generated_npcs),
+            npc_ids=npc_ids,
+            message=f"Successfully generated {len(generated_npcs)} NPCs for {payload.player_name}"
+        )
+        
+    except Exception as e:
+        print(f"❌ [main] Failed to generate NPCs: {e}")
+        return NPCGenerationResponse(
+            success=False,
+            npcs_generated=0,
+            npc_ids=[],
+            message=f"Failed to generate NPCs: {str(e)}"
+        )
+
+
+@app.get("/npc/{npc_id}")
+def get_npc_info(npc_id: str):
+    """Get detailed information about a specific NPC."""
+    try:
+        from npc.models import NPC
+        from db import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            npc = db.query(NPC).filter_by(id=npc_id).first()
+            if not npc:
+                return {"error": "NPC not found"}
+            
+            return {
+                "id": str(npc.id),
+                "full_name": npc.full_name,
+                "baseline_trust": npc.baseline_trust,
+                "trust": npc.trust,
+                "role": npc.role,
+                "archetype": npc.archetype,
+                "personality_traits": npc.personality_traits,
+                "narrative_hooks": npc.narrative_hooks,
+                "relationship_to_player": npc.relationship_to_player,
+                "motivation": npc.motivation,
+                "secrets": npc.secrets,
+                "generated": npc.generated
+            }
+        finally:
+            db.close()
+            
+    except Exception as e:
+        print(f"❌ [main] Failed to get NPC info: {e}")
+        return {"error": f"Failed to get NPC info: {str(e)}"}
+
+
+@app.get("/npc/list")
+def list_npcs():
+    """List all NPCs in the system."""
+    try:
+        from npc.models import NPC
+        from db import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            npcs = db.query(NPC).all()
+            return {
+                "npcs": [
+                    {
+                        "id": str(npc.id),
+                        "full_name": npc.full_name,
+                        "role": npc.role,
+                        "archetype": npc.archetype,
+                        "trust": npc.trust,
+                        "generated": npc.generated
+                    }
+                    for npc in npcs
+                ]
+            }
+        finally:
+            db.close()
+            
+    except Exception as e:
+        print(f"❌ [main] Failed to list NPCs: {e}")
+        return {"error": f"Failed to list NPCs: {str(e)}"}
+
+
+@app.get("/npc/state/list")
+def list_npc_states():
+    """List all NPC states in the system (legacy)."""
+    try:
+        from npc.models import NPCState
+        from db import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            npcs = db.query(NPCState).all()
+            return [
+                {
+                    "id": str(npc.id),
+                    "player_id": npc.player_id,
+                    "name": npc.name,
+                    "trust": npc.trust,
+                    "last_seen": npc.last_seen.isoformat(),
+                    "meta": npc.meta
+                }
+                for npc in npcs
+            ]
+        finally:
+            db.close()
+            
+    except Exception as e:
+        print(f"❌ [main] Failed to list NPC states: {e}")
+        return {"error": f"Failed to list NPC states: {str(e)}"}
+
+
 def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: Optional[Dict[str, Any]] = None, soulmap_delta: Optional[Dict[str, float]] = None) -> SceneResponse:
     print(f"DEBUG: _scene_to_response called with tag={tag}, story keys={list(story.keys())}")
     if tag not in story:

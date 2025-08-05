@@ -4,6 +4,63 @@
 
 ## 🎯 Recent Sprint Completions
 
+### ✅ Dynamic NPC Seed Generator & Profile Factory (SPR-NPC06) - COMPLETED
+**LLM-Powered Dynamic NPC Generation with Rich Metadata**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - LLM-powered NPC generation using OpenAI GPT-4o
+  - Rich NPC metadata including roles, archetypes, personality traits, and secrets
+  - Integration with player archetype and soul map data for personalization
+  - Fallback NPC templates when LLM is unavailable
+  - Database persistence with extended NPC model
+  - RESTful API endpoints for NPC generation and management
+  - Comprehensive testing and demo scripts
+
+**Technical Implementation:**
+- **Dynamic Generator:** `backend/npc/dynamic_generator.py` - LLM-powered NPC generation
+- **Extended Model:** `backend/npc/models.py` - Rich metadata fields for NPCs
+- **Database Migration:** `backend/migrations/versions/npc03_extend_npc_metadata.py` - Extended schema
+- **API Endpoints:** `backend/main.py` - NPC generation and management endpoints
+- **Testing:** `backend/tests/test_dynamic_npc_generator.py` - Comprehensive test suite
+- **Demo Scripts:** `scripts/demo_npc_generation.py` - Showcase different scenarios
+- **Documentation:** `docs/SPR-NPC06_DYNAMIC_NPC_GENERATOR.md` - Complete implementation guide
+
+**NPC Generation Features:**
+- **LLM Integration:** Uses OpenAI GPT-4o for intelligent NPC creation
+- **Personalization:** NPCs generated based on player archetype and soul map traits
+- **Rich Metadata:** Roles, archetypes, personality traits, narrative hooks, motivations, secrets
+- **Fallback System:** Predefined NPC templates when LLM is unavailable
+- **Database Persistence:** All generated NPCs stored with full metadata
+- **API Management:** RESTful endpoints for generation, retrieval, and listing
+
+**API Endpoints:**
+- `POST /npc/generate` - Generate dynamic NPCs based on player data
+- `GET /npc/{npc_id}` - Get detailed NPC information
+- `GET /npc/list` - List all NPCs in the system
+- `GET /npc/state/list` - List legacy NPC states
+
+**LLM Prompt Engineering:**
+- **Context-Aware:** Uses player name, archetype, story theme, and soul map traits
+- **Structured Output:** JSON format with comprehensive NPC profiles
+- **Role-Based:** Generates NPCs that complement or challenge player archetype
+- **Narrative Hooks:** Includes story hooks that can drive plot development
+- **Trust Integration:** Baseline trust values reflect NPC disposition toward player
+
+**Fallback NPC Templates:**
+- **Hero Archetype:** Elder Thorne (Mentor/Sage), Captain Valen (Rival/Warrior)
+- **Sage Archetype:** Luna Bright (Apprentice/Explorer)
+- **Explorer Archetype:** Raven Swift (Companion/Explorer)
+
+**Acceptance Criteria Met:**
+- ✅ LLM-generated NPC profiles based on strict logic rules (roles, alignment, trust)
+- ✅ Stores generated profiles in the database at ritual initialization
+- ✅ Integration with player archetype and soul map data
+- ✅ Fallback mechanisms for reliability
+- ✅ Comprehensive testing and documentation
+
+---
+
 ### ✅ NPC & Trust System Sprint (SPR-NPC01) - COMPLETED
 **Non-Player Characters with Persistent Trust Values**
 - **Status:** ✅ **COMPLETED** 
