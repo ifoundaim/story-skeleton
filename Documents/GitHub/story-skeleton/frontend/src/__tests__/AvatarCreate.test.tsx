@@ -1,0 +1,39 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import axios from 'axios';
+import AvatarCreate from '../scenes/AvatarCreate';
+import { SeedProvider } from '../SeedContext';
+
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+describe('AvatarCreate', () => {
+  it('submits avatar form and shows profile', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      data: { playerId: 'alice', soulSeedId: 'abc123def456', initSceneTag: 'intro_001' },
+    });
+
+    const user = userEvent.setup();
+    render(
+      <SeedProvider>
+        <MemoryRouter>
+          <AvatarCreate />
+        </MemoryRouter>
+      </SeedProvider>
+    );
+
+    await user.type(screen.getByPlaceholderText('Your name'), 'Alice');
+    await user.selectOptions(screen.getByRole('combobox'), 'Visionary Dreamer');
+    await user.click(screen.getByRole('button', { name: /confirm avatar/i }));
+
+    expect(mockedAxios.post).toHaveBeenCalledWith('/soulseed', {
+      playerName: 'Alice',
+      archetypePreset: 'Visionary Dreamer',
+      archetypeCustom: null,
+      avatarReferenceUrl: null,
+    });
+
+    expect(screen.queryByText(/Failed to create profile/i)).not.toBeInTheDocument();
+  });
+});

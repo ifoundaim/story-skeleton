@@ -1,0 +1,54 @@
+import backend.soulmap.router as soulmap_router
+
+import pytest
+from fastapi.testclient import TestClient
+from backend.main import app
+from backend.soulmap.vector_utils import clip_vector, add_vectors, norm_vector
+from backend.soulmap.models import Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import os
+
+# Setup test DB (in-memory for unit tests)
+SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+os.environ["TESTING"] = "1"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base.metadata.create_all(bind=engine)
+
+# Patch SessionLocal in soulmap_router to use TestingSessionLocal
+soulmap_router.SessionLocal = TestingSessionLocal
+
+client = TestClient(app)
+
+VECTOR_SIZE = 64
+
+def test_clip_vector():
+    vec = [2.0, -2.0, 0.5]
+    clipped = clip_vector(vec, -1, 1)
+    assert clipped == [1.0, -1.0, 0.5]
+
+def test_add_vectors():
+    a = [1, 2, 3]
+    b = [4, 5, 6]
+    assert add_vectors(a, b) == [5, 7, 9]
+
+def test_norm_vector():
+    vec = [3, 4]
+    assert norm_vector(vec) == 5.0
+
+def test_get_soulmap_zero():
+    resp = client.get("/soulmap/player/demo")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["player_id"] == "demo"
+    assert data["vector"] == [0.0] * VECTOR_SIZE 
+
+def _get_test_db():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+soulmap_router.get_db = _get_test_db 
