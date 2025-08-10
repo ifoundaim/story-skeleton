@@ -756,6 +756,67 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                     pass
     except Exception:
         pass
+
+    # ULTRA-GENERIC BINDING: If we still have no NPCs, scan prose for generic character roles
+    # like "hermit", "magician", "soldier", "warrior", "singer", "animal", "dancer", etc.
+    try:
+        if not npcs_present_out and base_text:
+            text_low = base_text.lower()
+            import re as __re
+            # Common role nouns (extensible). We intentionally keep this broad but curated
+            ROLE_KEYWORDS = {
+                "hermit","magician","mage","wizard","sorcerer","sorceress","witch","warlock",
+                "soldier","warrior","fighter","guardian","guard","knight","ranger","archer",
+                "leader","chief","captain","commander","general","chieftain",
+                "traveler","wanderer","wayfarer","pilgrim","stranger","visitor",
+                "singer","bard","minstrel","dancer","performer","actor","actress",
+                "scholar","sage","monk","priest","priestess","acolyte","healer","alchemist",
+                "merchant","trader","shopkeeper","vendor","smith","blacksmith","farmer",
+                "hunter","poacher","scout","spy","thief","rogue","assassin",
+                "sailor","pirate","captain","navigator",
+                "animal","wolf","bear","lion","hawk","eagle","fox",
+                "child","boy","girl","elder","herbalist","guide","mentor","rival",
+            }
+            # Find phrases like "a/an/the <... role>" and take the head noun
+            heads: list[str] = []
+            for m in __re.finditer(r"\b(?:a|an|the)\s+([a-z][a-z\-\s]{1,40})\b", text_low):
+                phrase = m.group(1).strip()
+                if not phrase:
+                    continue
+                # head noun is last token
+                head = __re.sub(r"[^a-z]", "", phrase.split()[-1])
+                if head and head in ROLE_KEYWORDS and head not in heads:
+                    heads.append(head)
+            if heads:
+                import uuid as _uuid
+                try:
+                    from npc.profile_seed import _friendly_name_for_uuid as _fname
+                except Exception:
+                    _fname = None  # type: ignore
+                present_name_map = scene.get("_present_name_map", {}) or {}
+                generated_ids: list[str] = []
+                for role in heads[:2]:  # limit to 2 to keep UI focused
+                    stable_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"{player_id}:role:{role}")) if player_id else str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"default:role:{role}"))
+                    if stable_id not in generated_ids:
+                        generated_ids.append(stable_id)
+                        if _fname is not None:
+                            try:
+                                present_name_map[stable_id] = _fname(_uuid.UUID(stable_id))
+                            except Exception:
+                                present_name_map[stable_id] = role.title()
+                        else:
+                            present_name_map[stable_id] = role.title()
+                if generated_ids:
+                    npcs_present_out = generated_ids
+                    scene["_present_name_map"] = present_name_map
+                    # Ensure DB profiles exist for these NPCs
+                    try:
+                        temp_scene = {"npcs_present": generated_ids}
+                        ensure_npc_profile(temp_scene, player_id)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
     
     # Normalize npc_dialogue trust field to string if present
     try:
