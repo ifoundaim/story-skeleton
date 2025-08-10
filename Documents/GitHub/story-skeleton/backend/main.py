@@ -790,6 +790,36 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 text_with_names = base_text + injected
     except Exception:
         text_with_names = base_text
+
+    # If we still have no NPCs, but the prose mentions a singular role noun (Traveler/Leader),
+    # bind it to a deterministic NPC so the UI can show a profile and name.
+    try:
+        if not npcs_present_out and base_text:
+            # Find capitalized nouns that look like roles
+            candidates = _extract_candidate_names(base_text)
+            role_aliases = {"Traveler": "traveler", "Leader": "leader", "Mentor": "mentor", "Sage": "sage"}
+            matched = [w for w in candidates if w in role_aliases]
+            if matched:
+                import uuid as _uuid
+                # Use a stable namespace-based UUID for each role
+                role_key = role_aliases[matched[0]]
+                stable_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"default:{role_key}"))
+                npcs_present_out = [stable_id]
+                # attach to name map; synthesize a friendly name if unknown
+                present_name_map = scene.get("_present_name_map", {}) or {}
+                if stable_id not in present_name_map:
+                    # Prefer canonical names for some roles
+                    canonical = {"mentor": "Orin", "sage": "Elder", "traveler": "Lyra", "leader": "Thorne"}
+                    present_name_map[stable_id] = canonical.get(role_key, matched[0])
+                scene["_present_name_map"] = present_name_map
+                # Ensure DB profile exists
+                try:
+                    temp_scene = {"npcs_present": [stable_id]}
+                    ensure_npc_profile(temp_scene, player_id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
     # Include present_name_map if available
     present_name_map = scene.get("present_name_map", scene.get("_present_name_map", {})) if isinstance(scene, dict) else {}
     
@@ -797,6 +827,17 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
     beat_id = scene.get("beat_id") if isinstance(scene, dict) else None
     beat_tags = scene.get("narrative_purpose", []) if isinstance(scene, dict) else []
     scene_phase = scene.get("phase") if isinstance(scene, dict) else None
+    # If Director beat fields are missing and story looks legacy, try to infer simple ones
+    if beat_id is None and isinstance(scene, dict):
+        try:
+            if isinstance(scene.get("scene_index"), int):
+                idx = int(scene["scene_index"]) or 0
+                scene_phase = "early" if idx <= 6 else ("mid" if idx <= 21 else "late")
+            beat_id = beat_id or "legacy_llm"
+            if not beat_tags:
+                beat_tags = ["legacy", "linear"]
+        except Exception:
+            pass
     
     return {
         "sceneTag": tag,
