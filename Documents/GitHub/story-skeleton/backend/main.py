@@ -730,6 +730,32 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 npc_dialogue = []
                 dialogue_type = "single"
                 # ensure we at least return story npcs_present
+    # FINAL FALLBACK: If still no NPCs present but the prose references a mentor/elder/sage,
+    # introduce a deterministic Mentor NPC so the UI can render identity and chat.
+    try:
+        if not npcs_present_out:
+            text_probe = str(scene.get("text", "")).lower()
+            if any(k in text_probe for k in ["elder", "mentor", "sage"]):
+                import uuid as _uuid
+                fallback_mentor_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, "default:orin"))
+                npcs_present_out = [fallback_mentor_id]
+                # ensure present_name_map exists on scene
+                try:
+                    present_name_map = scene.get("_present_name_map", {}) or {}
+                    if fallback_mentor_id not in present_name_map:
+                        present_name_map[fallback_mentor_id] = "Orin"
+                    scene["_present_name_map"] = present_name_map
+                    # also reflect into scene for downstream consumers
+                    scene["npcs_present"] = [fallback_mentor_id]
+                    # ensure DB profile exists for this NPC
+                    try:
+                        ensure_npc_profile(scene, player_id)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+    except Exception:
+        pass
     
     # Normalize npc_dialogue trust field to string if present
     try:
