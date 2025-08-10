@@ -236,6 +236,10 @@ class SceneResponse(BaseModel):
     dialogue_type: str = "single"  # "single" or "group"
     npcs_present: list[str] = Field(default_factory=list)
     soulmap_delta: dict[str, float] | None = None
+    # Beat information for debugging/testing
+    beat_id: str | None = None
+    beat_tags: list[str] = Field(default_factory=list)
+    scene_phase: str | None = None
 
 SceneResponse.model_rebuild()
 
@@ -304,6 +308,7 @@ async def npc_chat(payload: NPCChatIn) -> NPCChatOut:
 
 # ─────────────────────────────── Core Endpoints ───────────────────────────────
 @app.post("/ritual", response_model=RitualResponse)
+@app.post("/api/ritual", response_model=RitualResponse)
 async def api_ritual(payload: RitualRequest) -> RitualResponse:
     print(f"🔮 [main] /ritual payload={payload.json()}")
 
@@ -332,6 +337,21 @@ async def api_ritual(payload: RitualRequest) -> RitualResponse:
     try:
         # Ensure intentVector is a list of floats
         intent_vector = [float(x) for x in data["intentVector"]]
+
+        # Persist ritual inputs for Director world hook extraction
+        try:
+            ritual_dir = BASE_DIR / "ritual_cache"
+            ritual_dir.mkdir(parents=True, exist_ok=True)
+            ritual_file = ritual_dir / f"{payload.playerId}.json"
+            _write_json(str(ritual_file), {
+                "askText": payload.askText,
+                "seekText": payload.seekText,
+                "knockText": payload.knockText,
+                "theme": str(data.get("theme", payload.theme)),
+            })
+        except Exception as _ritual_cache_err:
+            print(f"⚠️ [main] failed to write ritual cache: {_ritual_cache_err}")
+
         first_tag, tree = await generate_story(
             payload.playerId,
             player_name,  # Pass the actual player name
@@ -745,7 +765,13 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
     except Exception:
         text_with_names = base_text
     # Include present_name_map if available
-    present_name_map = scene.get("_present_name_map", {}) if isinstance(scene, dict) else {}
+    present_name_map = scene.get("present_name_map", scene.get("_present_name_map", {})) if isinstance(scene, dict) else {}
+    
+    # Extract beat information for testing/debugging
+    beat_id = scene.get("beat_id") if isinstance(scene, dict) else None
+    beat_tags = scene.get("narrative_purpose", []) if isinstance(scene, dict) else []
+    scene_phase = scene.get("phase") if isinstance(scene, dict) else None
+    
     return {
         "sceneTag": tag,
         "text": text_with_names,
@@ -757,6 +783,9 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
         "npcs_present": npcs_present_out,
         "present_name_map": present_name_map,
         "soulmap_delta": soulmap_delta,
+        "beat_id": beat_id,
+        "beat_tags": beat_tags,
+        "scene_phase": scene_phase,
     }
 
 # ───────────────────────── ritual endpoint ─────────────────────────────────
