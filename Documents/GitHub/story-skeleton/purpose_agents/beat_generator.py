@@ -288,6 +288,23 @@ async def generate_story_directed(
                 present_name_map[fallback_mentor_id] = present_name_map.get(fallback_mentor_id, "Orin")
         except Exception:
             pass
+        # Ultra-generic role binding in Director path as well
+        try:
+            if not npcs_present and scene_text:
+                text_low = scene_text.lower()
+                role_words = [
+                    "hermit","magician","mage","wizard","soldier","warrior","singer","dancer",
+                    "traveler","wanderer","leader","scout","healer","monk","sage","mentor","rival",
+                ]
+                for role in role_words:
+                    if role in text_low:
+                        import uuid as _uuid
+                        stable_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"default:role:{role}"))
+                        npcs_present = [stable_id]
+                        present_name_map[stable_id] = present_name_map.get(stable_id, role.title())
+                        break
+        except Exception:
+            pass
         if npcs_present:
             personalities = [build_personality(state.npcs[n]) for n in npcs_present]
             # Add one atmospheric line for flavor in early scenes
