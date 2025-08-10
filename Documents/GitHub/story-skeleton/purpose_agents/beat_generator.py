@@ -279,6 +279,15 @@ async def generate_story_directed(
             scene_text = None
         if not scene_text:
             scene_text = generate_scene_text(picked, npcs_present, state, player_name)
+        # If the prose mentions an elder/mentor but none were scheduled, force a mentor presence
+        try:
+            if not npcs_present and re.search(r"\b(elder|mentor|sage)\b", scene_text.lower()):
+                import uuid as _uuid
+                fallback_mentor_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, "default:orin"))
+                npcs_present = [fallback_mentor_id]
+                present_name_map[fallback_mentor_id] = present_name_map.get(fallback_mentor_id, "Orin")
+        except Exception:
+            pass
         if npcs_present:
             personalities = [build_personality(state.npcs[n]) for n in npcs_present]
             # Add one atmospheric line for flavor in early scenes
