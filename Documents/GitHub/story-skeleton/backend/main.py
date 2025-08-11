@@ -42,6 +42,22 @@ from purpose_agents.codex_router import codex_router
 print(f"[DEBUG] codex_router id at import: {id(codex_router)}")
 from npc import router as npc_router
 
+# Import choice generator for free-text processing
+try:
+    from story.choice_generator import make_contextual_choice, should_enable_free_text
+    from story.telemetry import log_choice_generated, log_free_text
+    CHOICE_GENERATOR_AVAILABLE = True
+except ImportError:
+    CHOICE_GENERATOR_AVAILABLE = False
+    def make_contextual_choice(*args, **kwargs):
+        return None
+    def should_enable_free_text(*args, **kwargs):
+        return False
+    def log_choice_generated(*args, **kwargs):
+        pass
+    def log_free_text(*args, **kwargs):
+        pass
+
 # Import story validator
 try:
     from codex.validate import validate, auto_heal
@@ -100,6 +116,10 @@ app.mount("/static", StaticFiles(directory=UPLOADS_DIR, check_dir=False), name="
 
 # Lightweight persistent store for NPC chat state
 CHAT_STATE_FILE = BASE_DIR / "npc_chat_state.json"
+
+# Feature flag: allow very generic role-based fallback binding when no NPC is present
+# Default OFF to avoid random NPCs appearing in scenes without explicit characters
+ENABLE_GENERIC_ROLE_BINDING = os.getenv("ENABLE_GENERIC_ROLE_BINDING", "false").lower() in {"true", "1", "yes"}
 
 if not settings.testing:
     @app.on_event("startup")
@@ -205,6 +225,7 @@ class ChoiceRequest(BaseModel):
     choice:     Union[str, int] | None = Field(default=None, alias="choice")
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
+    # Normalize incoming choice field names
     @property
     def choice_val(self) -> Union[str, int]:
         val = (
@@ -215,6 +236,18 @@ class ChoiceRequest(BaseModel):
         if val is None:
             raise ValueError("No choice value provided")
         return val
+
+class FreeTextRequest(BaseModel):
+    player_id: str = Field(..., alias="playerId")
+    scene_index: int = Field(..., alias="sceneIndex")
+    user_text: str = Field(..., max_length=500, alias="userText")
+    model_config = ConfigDict(populate_by_name=True)
+
+class FreeTextResponse(BaseModel):
+    success: bool
+    choice_text: str
+    mapped_text: str | None = None
+    error: str | None = None
 
 # Move model_rebuild() calls here, after all model classes are defined
 PlayerProfileIn.model_rebuild()
@@ -544,6 +577,56 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                         print(f"[DEBUG] Using dynamic NPCs for scene {tag}: {npcs_present}")
                     else:
                         print(f"[DEBUG] Using story NPCs for scene {tag}: {npcs_present}")
+
+                    # Name-first override: if prose contains an explicit proper name (e.g.,
+                    # "partner, Jess," or "named Jess"), prefer that single character over
+                    # any auto-assigned dynamic NPCs. This prevents random companions from
+                    # appearing when the scene explicitly introduces someone by name.
+                    try:
+                        import re as _re
+                        import uuid as _uuid
+                        text_for_names = str(scene.get("text", ""))
+                        explicit_names: list[str] = []
+                        for _pat in [
+                            r"\bnamed\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\bwho\s+calls\s+themselves\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\bintroduces\s+(?:himself|herself|themself)\s+as\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            # role, Name — covers patterns like "partner, Jess," "friend, Mira," etc.
+                            r"\b(?:partner|friend|lover|mentor|ally|rival|sibling|parent|colleague|boss|guide|artist|stranger|oracle|leader|traveler|merchant|companion),\s*([A-Z][A-Za-z'\-]{2,})\b",
+                            # common prepositions/verbs leading a named person: with/to/about/for/meet/see/visit
+                            r"\bwith\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\bto\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\babout\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\bfor\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\b(?:meet|see|visit|call|text|message)\s+([A-Z][A-Za-z'\-]{2,})\b",
+                            r"\b(?:look\s+for|search\s+for|ask\s+for|seek\s+out)\s+([A-Z][A-Za-z'\-]{2,})\b",
+                        ]:
+                            _m = _re.search(_pat, text_for_names)
+                            if _m:
+                                explicit_names.append(_m.group(1))
+                        if explicit_names:
+                            # Mint a deterministic ID for the first named character
+                            _nm = explicit_names[0]
+                            stable_id = str(
+                                _uuid.uuid5(_uuid.NAMESPACE_OID, f"{player_id}:name:{_nm.lower()}")
+                            ) if player_id else str(
+                                _uuid.uuid5(_uuid.NAMESPACE_OID, f"default:name:{_nm.lower()}")
+                            )
+                            npcs_present = [stable_id]
+                            # Reflect override into scene and present name map
+                            _pnm = scene.get("_present_name_map", {}) or {}
+                            _pnm[stable_id] = _nm
+                            scene["_present_name_map"] = _pnm
+                            scene["npcs_present"] = [stable_id]
+                            print(f"[DEBUG] Explicit name override applied: {stable_id} -> {_nm}")
+                        else:
+                            # Keep scene's npcs_present in sync with dynamic assignment for profile seeding
+                            try:
+                                scene["npcs_present"] = [str(x) for x in (npcs_present or [])]
+                            except Exception:
+                                pass
+                    except Exception as _e:
+                        print(f"[DEBUG] Name-first override skipped due to error: {_e}")
                     
                     # Ensure NPC profiles exist for all present NPCs
                     if npcs_present:
@@ -570,19 +653,10 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                     print(f"[DEBUG] Failed to get dynamic NPCs, using fallback: {e}")
                     # Continue with existing npcs_present logic
                 
-                # If no npcs_present defined, check if there are active companions
+                # If no npcs_present defined, DO NOT auto-inject companions from DB.
+                # Rely strictly on beat-driven npcs_present or role/name detection from prose.
                 if not npcs_present:
-                    try:
-                        from npc.service import get_companions
-                        from db import SessionLocal
-                        db = SessionLocal()
-                        companions = get_companions(player_id, db)
-                        npcs_present = [comp.id for comp in companions[:3]]  # Limit to 3
-                        db.close()
-                        print(f"[DEBUG] Found active companions for scene: {npcs_present}")
-                    except Exception as e:
-                        print(f"[DEBUG] Failed to get active companions: {e}")
-                        npcs_present = []
+                    print("[DEBUG] Auto-companion injection disabled; relying on beat/role-driven NPCs")
                 
                 # Generate group dialogue if multiple NPCs present
                 if len(npcs_present) > 1:
@@ -731,23 +805,20 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 dialogue_type = "single"
                 # ensure we at least return story npcs_present
     # FINAL FALLBACK: If still no NPCs present but the prose references a mentor/elder/sage,
-    # introduce a deterministic Mentor NPC so the UI can render identity and chat.
+    # introduce a deterministic generic Mentor NPC so the UI can render identity and chat.
     try:
         if not npcs_present_out:
             text_probe = str(scene.get("text", "")).lower()
             if any(k in text_probe for k in ["elder", "mentor", "sage"]):
                 import uuid as _uuid
-                fallback_mentor_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, "default:orin"))
+                fallback_mentor_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, "default:mentor"))
                 npcs_present_out = [fallback_mentor_id]
-                # ensure present_name_map exists on scene
                 try:
                     present_name_map = scene.get("_present_name_map", {}) or {}
                     if fallback_mentor_id not in present_name_map:
-                        present_name_map[fallback_mentor_id] = "Orin"
+                        present_name_map[fallback_mentor_id] = "Mentor"
                     scene["_present_name_map"] = present_name_map
-                    # also reflect into scene for downstream consumers
                     scene["npcs_present"] = [fallback_mentor_id]
-                    # ensure DB profile exists for this NPC
                     try:
                         ensure_npc_profile(scene, player_id)
                     except Exception:
@@ -757,37 +828,78 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
     except Exception:
         pass
 
-    # ULTRA-GENERIC BINDING: If we still have no NPCs, scan prose for generic character roles
-    # like "hermit", "magician", "soldier", "warrior", "singer", "animal", "dancer", etc.
+    # ULTRA-GENERIC BINDING: If we still have no NPCs and the flag is enabled,
+    # scan prose for generic character roles like "hermit", "magician", "soldier".
     try:
-        if not npcs_present_out and base_text:
-            text_low = base_text.lower()
+        if not npcs_present_out and ENABLE_GENERIC_ROLE_BINDING:
+            scene_text = str(scene.get("text", ""))
+            if not scene_text:
+                raise Exception("No scene text available for role binding")
+            text_low = scene_text.lower()
             import re as __re
             # Common role nouns (extensible). We intentionally keep this broad but curated
-            ROLE_KEYWORDS = {
-                "hermit","magician","mage","wizard","sorcerer","sorceress","witch","warlock",
-                "soldier","warrior","fighter","guardian","guard","knight","ranger","archer",
-                "leader","chief","captain","commander","general","chieftain",
-                "traveler","wanderer","wayfarer","pilgrim","stranger","visitor",
-                "singer","bard","minstrel","dancer","performer","actor","actress",
-                "scholar","sage","monk","priest","priestess","acolyte","healer","alchemist",
-                "merchant","trader","shopkeeper","vendor","smith","blacksmith","farmer",
-                "hunter","poacher","scout","spy","thief","rogue","assassin",
-                "sailor","pirate","captain","navigator",
-                "animal","wolf","bear","lion","hawk","eagle","fox",
-                "child","boy","girl","elder","herbalist","guide","mentor","rival",
+            # Instead of a narrow whitelist, accept a wide range of human/role nouns.
+            # Heuristic: capture head noun from determiners and filter out scene/world words.
+            STOPWORDS = {
+                "forest","village","town","city","river","mountain","valley","path","road","song",
+                "day","night","mist","shadow","light","darkness","magic","journey","realm","world",
+                "wind","rain","storm","sun","moon","stars","gate","door","hall","temple","ruins",
             }
             # Find phrases like "a/an/the <... role>" and take the head noun
             heads: list[str] = []
-            for m in __re.finditer(r"\b(?:a|an|the)\s+([a-z][a-z\-\s]{1,40})\b", text_low):
+            # Capture 1–2 tokens after determiner to avoid swallowing verbs like "offered"
+            for m in __re.finditer(r"\b(?:a|an|the)\s+([a-z][a-z\-]+(?:\s+[a-z][a-z\-]+)?)\b", text_low):
                 phrase = m.group(1).strip()
                 if not phrase:
                     continue
                 # head noun is last token
                 head = __re.sub(r"[^a-z]", "", phrase.split()[-1])
-                if head and head in ROLE_KEYWORDS and head not in heads:
+                if head and len(head) >= 3 and head not in STOPWORDS and head not in heads:
                     heads.append(head)
-            if heads:
+            # Also try to capture explicit character names from common intro patterns
+            name_candidates: list[str] = []
+            for pat in [
+                r"\bnamed\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\bwho\s+calls\s+themselves\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\bintroduces\s+(?:himself|herself|themself)\s+as\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\bwho\s+introduces\s+(?:himself|herself|themself)\s+as\s+([A-Z][A-Za-z'\-]{2,})\b",
+                # Also catch simpler references like "with Alex", "about Alex", etc.
+                r"\bwith\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\bto\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\babout\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\bfor\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\b(?:meet|see|visit|call|text|message)\s+([A-Z][A-Za-z'\-]{2,})\b",
+                r"\b(?:look\s+for|search\s+for|ask\s+for|seek\s+out)\s+([A-Z][A-Za-z'\-]{2,})\b",
+            ]:
+                n = __re.search(pat, scene_text)
+                if n:
+                    name = n.group(1)
+                    if name and name not in name_candidates:
+                        name_candidates.append(name)
+            # If we have explicit names but no role heads, mint IDs and return them directly
+            if not npcs_present_out and name_candidates:
+                import uuid as _uuid
+                present_name_map = scene.get("_present_name_map", {}) or {}
+                generated_ids: list[str] = []
+                for nm in name_candidates[:1]:  # only show the first detected name
+                    sid = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"{player_id}:name:{nm.lower()}")) if player_id else str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"default:name:{nm.lower()}"))
+                    if sid not in generated_ids:
+                        generated_ids.append(sid)
+                        present_name_map[sid] = nm
+                if generated_ids:
+                    npcs_present_out = generated_ids
+                    scene["_present_name_map"] = present_name_map
+                    try:
+                        scene["npcs_present"] = generated_ids
+                    except Exception:
+                        pass
+                    # Ensure DB profiles for these named characters
+                    try:
+                        ensure_npc_profile({"npc_profile": [{"id": generated_ids[0], "name": name_candidates[0]}]}, player_id)
+                    except Exception:
+                        pass
+
+            if heads and not npcs_present_out:
                 import uuid as _uuid
                 try:
                     from npc.profile_seed import _friendly_name_for_uuid as _fname
@@ -795,22 +907,32 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                     _fname = None  # type: ignore
                 present_name_map = scene.get("_present_name_map", {}) or {}
                 generated_ids: list[str] = []
-                for role in heads[:2]:  # limit to 2 to keep UI focused
+                for idx_role, role in enumerate(heads[:2]):  # limit to 2 to keep UI focused
                     stable_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"{player_id}:role:{role}")) if player_id else str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"default:role:{role}"))
                     if stable_id not in generated_ids:
                         generated_ids.append(stable_id)
-                        if _fname is not None:
+                        # Prefer explicitly mentioned name if available
+                        explicit_name = name_candidates[idx_role] if idx_role < len(name_candidates) else None
+                        if explicit_name:
+                            present_name_map[stable_id] = explicit_name
+                        elif _fname is not None:
                             try:
                                 present_name_map[stable_id] = _fname(_uuid.UUID(stable_id))
                             except Exception:
                                 present_name_map[stable_id] = role.title()
                         else:
                             present_name_map[stable_id] = role.title()
-                if generated_ids:
+                if generated_ids and not npcs_present_out:
                     npcs_present_out = generated_ids
                     scene["_present_name_map"] = present_name_map
+                    # Reflect into scene for downstream consumers
+                    try:
+                        scene["npcs_present"] = generated_ids
+                    except Exception:
+                        pass
                     # Ensure DB profiles exist for these NPCs
                     try:
+                        # Create minimal temp scene to seed profiles with deterministic names
                         temp_scene = {"npcs_present": generated_ids}
                         ensure_npc_profile(temp_scene, player_id)
                     except Exception:
@@ -831,26 +953,9 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
         pass
 
     media_dict = {"images": getattr(media, "images", []), "audio": getattr(media, "audio", [])}
-    # Augment story text with present NPC names for inline visibility
+    # Keep original scene prose; do not inject trailing companion line
     base_text = scene.get("text", "")
     text_with_names = base_text
-    try:
-        present_name_map = scene.get("_present_name_map", {})
-        present_ids = npcs_present_out or []
-        present_names = [present_name_map.get(nid, str(nid)[:8]) for nid in present_ids]
-        present_names = [n for n in present_names if n]
-        if present_names:
-            if len(present_names) == 1:
-                names_phrase = present_names[0]
-            elif len(present_names) == 2:
-                names_phrase = f"{present_names[0]} and {present_names[1]}"
-            else:
-                names_phrase = ", ".join(present_names[:-1]) + f", and {present_names[-1]}"
-            injected = f"\n\nWith {names_phrase} beside you, the moment takes on new meaning."
-            if names_phrase not in base_text:
-                text_with_names = base_text + injected
-    except Exception:
-        text_with_names = base_text
 
     # If we still have no NPCs, but the prose mentions a singular role noun (Traveler/Leader),
     # bind it to a deterministic NPC so the UI can show a profile and name.
@@ -869,8 +974,8 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                 # attach to name map; synthesize a friendly name if unknown
                 present_name_map = scene.get("_present_name_map", {}) or {}
                 if stable_id not in present_name_map:
-                    # Prefer canonical names for some roles
-                    canonical = {"mentor": "Orin", "sage": "Elder", "traveler": "Lyra", "leader": "Thorne"}
+                    # Prefer canonical names for some roles (generic names, not pre-defined companions)
+                    canonical = {"mentor": "Mentor", "sage": "Elder", "traveler": "Traveler", "leader": "Leader", "oracle": "Oracle"}
                     present_name_map[stable_id] = canonical.get(role_key, matched[0])
                 scene["_present_name_map"] = present_name_map
                 # Ensure DB profile exists
@@ -982,7 +1087,7 @@ async def api_start(req: StartRequest):
 
     print("⚠️ [main] falling back to static story.json")
     story = _read_json(str(STORY_FILE), {})
-    return _scene_to_response("tag_001", story, player_id="")  # Updated to use 30-scene framework
+    return _scene_to_response("intro_001", story, player_id="")  # Use correct first scene from static story
 
 
 def patch_story_tree(story_dict, player_name: str = "Adventurer"):
@@ -1067,7 +1172,12 @@ def patch_story_tree(story_dict, player_name: str = "Adventurer"):
 
 
 async def _choose_py(req: ChoiceRequest):
-    print(f"🟢 [main] Entered _choose_py for soulSeedId={req.soulSeedId}, sceneTag={req.sceneTag}, choice={req.choice_val}", flush=True)
+    try:
+        chosen_val = req.choice_val
+    except Exception as e:
+        print(f"❌ [main] _choose_py could not resolve choice value: {e}", flush=True)
+        raise
+    print(f"🟢 [main] Entered _choose_py for soulSeedId={req.soulSeedId}, sceneTag={req.sceneTag}, choice={chosen_val}", flush=True)
     state = _read_json(str(STATE_FILE), {"stories": {}})
     story_data = state["stories"].get(req.soulSeedId)
 
@@ -1107,8 +1217,21 @@ async def _choose_py(req: ChoiceRequest):
         except Exception as e:
             print(f"[main] Failed to ensure NPC profiles in _choose_py: {e}")
 
-    str_key_map = {str(k): v["next"] for k, v in scene.get("choices", {}).items()}
-    key = str(req.choice_val)
+    raw_choices = scene.get("choices", {}) or {}
+    print(f"[main] _choose_py raw choices for {req.sceneTag}: {raw_choices}", flush=True)
+    # Support both dict-of-dicts (with next) and legacy dict-of-tags
+    str_key_map = {}
+    for k, v in raw_choices.items():
+        if isinstance(v, dict) and "next" in v:
+            str_key_map[str(k)] = str(v.get("next"))
+        else:
+            # legacy static JSON: value is next-tag string
+            try:
+                str_key_map[str(k)] = str(v)
+            except Exception:
+                pass
+    print(f"[main] _choose_py key map for {req.sceneTag}: {str_key_map}", flush=True)
+    key = str(chosen_val)
     if key not in str_key_map:
         raise HTTPException(400, f"Choice '{key}' not found in scene choices")
     next_tag = str_key_map[key]
@@ -1504,6 +1627,101 @@ async def api_choose(req: ChoiceRequest = Body(...)):
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/choices/free", response_model=FreeTextResponse)
+async def api_free_text(req: FreeTextRequest = Body(...)):
+    """Process free-text input and transform it into a safe, validated choice."""
+    try:
+        # Check if free-text is enabled for this scene
+        if not should_enable_free_text(req.scene_index):
+            return FreeTextResponse(
+                success=False,
+                choice_text="",
+                error="Free-text is not enabled for this scene"
+            )
+        
+        # Sanitize input
+        sanitized_text = req.user_text.strip()
+        if not sanitized_text or len(sanitized_text) < 3:
+            return FreeTextResponse(
+                success=False,
+                choice_text="",
+                error="Text too short or empty"
+            )
+        
+        # Light moderation - check for inappropriate content
+        inappropriate_words = ["kill", "murder", "hate", "destroy", "attack", "fight", "hurt"]
+        if any(word in sanitized_text.lower() for word in inappropriate_words):
+            return FreeTextResponse(
+                success=False,
+                choice_text="",
+                error="Content contains inappropriate language"
+            )
+        
+        # Transform via LLM with guardrails
+        try:
+            import openai
+            client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            prompt = f"""
+Transform this user input into a safe, contextual story choice:
+
+User input: "{sanitized_text}"
+
+REQUIREMENTS:
+1. Must be safe and appropriate for all audiences
+2. Should be 1-2 sentences maximum
+3. Must feel natural in a story context
+4. Should maintain the user's intent while being story-appropriate
+5. Avoid violence, inappropriate content, or breaking character
+
+Transform the input into a story choice that the player character could reasonably make.
+Respond with ONLY the transformed choice text, no explanations.
+"""
+            
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=100
+            )
+            
+            transformed_text = response.choices[0].message.content.strip()
+            
+            # Validate the transformed text
+            if not transformed_text or len(transformed_text) > 200:
+                transformed_text = "Consider the situation carefully"
+            
+            # Log the free-text processing
+            if CHOICE_GENERATOR_AVAILABLE:
+                log_free_text(req.scene_index, sanitized_text[:50], transformed_text)
+            
+            return FreeTextResponse(
+                success=True,
+                choice_text=transformed_text,
+                mapped_text=transformed_text
+            )
+            
+        except Exception as e:
+            # Fallback to safe default
+            safe_choice = "Consider the situation carefully"
+            
+            if CHOICE_GENERATOR_AVAILABLE:
+                log_free_text(req.scene_index, sanitized_text[:50], safe_choice)
+            
+            return FreeTextResponse(
+                success=True,
+                choice_text=safe_choice,
+                mapped_text=safe_choice
+            )
+            
+    except Exception as exc:
+        return FreeTextResponse(
+            success=False,
+            choice_text="",
+            error=str(exc)
+        )
 
 
 @app.get("/trust")

@@ -39,19 +39,19 @@ export default function Ritual() {
     }
 
     try {
-      console.log('📤 POST /ritual', { playerId, ask, seek, knock, theme })
+      console.log('📤 POST /api/ritual', { playerId, ask, seek, knock, theme })
       const { data } = await axios.post<{
         theme: string
         intentVector: number[]
         nextSceneTag: string
-      }>('/ritual', {
+      }>('/api/ritual', {
         playerId,
         askText:   ask.trim(),
         seekText:  seek.trim(),
         knockText: knock.trim(),
         theme:     theme.trim(),
       })
-      console.log('✅ /ritual response', data)
+      console.log('✅ /api/ritual response', data)
 
       // pass nextSceneTag into SceneView
       navigate('/scene', {
