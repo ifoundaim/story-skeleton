@@ -261,6 +261,66 @@ async def generate_story_directed(
                 "2": {"text": "Press on", "next": next_tag, "next_scene_index": si + 1},
             }
 
+            # Ensure planned character encounters are present at anchor indices
+            try:
+                from .generate_story import _compute_anchor_indices, _pick_name_for_role, _mint_id_for_name, _inject_intro_sentence
+                anchors = _compute_anchor_indices(TOTAL_SCENES)
+                role_at_this_scene = None
+                for role, idx in anchors.items():
+                    if idx == si:
+                        role_at_this_scene = role
+                        break
+                if role_at_this_scene:
+                    seed = sum(ord(c) for c in player_name) + si
+                    name = _pick_name_for_role(role_at_this_scene, seed)
+                    npc_id = _mint_id_for_name(state.player_id if hasattr(state, 'player_id') else None, name)
+                    # Ensure presence and prose mention
+                    picked.setdefault('npcs_present', [])
+                    if npc_id not in picked['npcs_present']:
+                        picked['npcs_present'].append(npc_id)
+                    picked['text'] = _inject_intro_sentence(picked.get('text', ''), role_at_this_scene.replace('_', ' '), name)
+                    # Persist lightweight metadata
+                    state.__dict__.setdefault('_npc_metadata', {})[npc_id] = {"full_name": name, "role": role_at_this_scene}
+            except Exception:
+                pass
+            
+            # Generate 3rd contextual choice
+            try:
+                from backend.story.choice_generator import make_contextual_choice, should_enable_free_text
+                from backend.story.telemetry import log_choice_generated
+                
+                existing_choice_texts = [ch.get("text", "") for ch in choices.values()]
+                contextual_choice = await make_contextual_choice(
+                    state=state.__dict__,
+                    beat=picked,
+                    npcs_present=npcs_present,
+                    existing_choices=existing_choice_texts
+                )
+                
+                if contextual_choice:
+                    choices["3"] = {
+                        "text": contextual_choice.text,
+                        "next": next_tag,
+                        "next_scene_index": si + 1,
+                        **contextual_choice.effects
+                    }
+                    
+                    # Log the generated choice
+                    log_choice_generated(
+                        scene_index=si,
+                        beat_id=picked.get("id", "unknown"),
+                        text=contextual_choice.text,
+                        source="auto3"
+                    )
+                    
+                    # Add free-text flag if enabled
+                    if should_enable_free_text(si):
+                        choices["free_text_enabled"] = True
+                        
+            except Exception as e:
+                print(f"⚠️ Choice generation failed for scene {si}: {e}")
+                # Continue without 3rd choice
+
         # Build name map for present NPCs so the UI can render names immediately
         present_name_map = {nid: state.npcs.get(nid, {}).get("full_name", nid[:8]) for nid in npcs_present}
 

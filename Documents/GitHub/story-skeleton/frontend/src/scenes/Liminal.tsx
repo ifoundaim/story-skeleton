@@ -22,7 +22,7 @@ export default function Liminal() {
     }
     const playerId = localStorage.getItem('playerId') || '';
     try {
-      const res = await fetch('/ritual', {
+      const res = await fetch('/api/ritual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -36,12 +36,15 @@ export default function Liminal() {
       if (res.ok) {
         const data = await res.json();
         window.dispatchEvent(new CustomEvent('ritualCompleted', { detail: data }));
-        // optional global hook
         (window as any).proceedToAvatarCreation?.(data.intentVector, data.theme);
+        // Prefer moving directly to Scene when ritual succeeds
+        navigate('/scene', { replace: true, state: { sceneTag: data.nextSceneTag } });
+        return;
       }
     } catch {
       /* ignore network errors */
     }
+    // Fallback: go to avatar page if ritual call failed
     navigate('/avatar');
   };
 

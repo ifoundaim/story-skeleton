@@ -12,11 +12,14 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 5173,
       proxy: {
-        '/soulseed': {
+        // General API namespace
+        '/api': {
           target: backend,
           changeOrigin: true,
         },
-        '/ritual': {
+        // IMPORTANT: Do not proxy '/ritual' so the SPA route can render
+        // Use '/api/ritual' for API calls instead
+        '/soulseed': {
           target: backend,
           changeOrigin: true,
         },
@@ -29,6 +32,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         '/choice': {
+          target: backend,
+          changeOrigin: true,
+        },
+        // New free-text choices endpoint
+        '/choices': {
           target: backend,
           changeOrigin: true,
         },

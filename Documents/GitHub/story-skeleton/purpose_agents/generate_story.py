@@ -86,6 +86,113 @@ def strip_code_fences(text):
     text = re.sub(r"```\s*$", "", text.strip())
     return text
 
+# ───────────────────────────── character encounter plan ─────────────────────────────
+def _compute_anchor_indices(total_scenes: int) -> dict[str, int]:
+    """Spread planned encounters across the layout (works for 30 or 40).
+
+    Returns a mapping of role labels to target scene indices (0-based).
+    """
+    # Key beats as proportions of total
+    anchors = {
+        "partner": 0.10,      # early relationship/person of interest
+        "best_friend": 0.17,  # confidant/buddy
+        "mentor": 0.22,       # guide shows up by end of Act I
+        "ally": 0.35,         # ally joins mid Act II
+        "rival": 0.45,        # rival appears mid/late Act II
+        "antagonist": 0.60,   # first strong hint in Act III
+        "guide": 0.72,        # guide returns with advice
+        "stranger": 0.80,     # enigmatic stranger late
+    }
+    # Convert to indices with clamping to valid range
+    out: dict[str, int] = {}
+    for role, p in anchors.items():
+        idx = max(0, min(total_scenes - 2, round(total_scenes * p)))
+        out[role] = idx
+    return out
+
+
+def _pick_name_for_role(role: str, seed: int) -> str:
+    """Choose a deterministic human-friendly name per role and seed."""
+    pools = {
+        "partner": ["Alex", "Riley", "Jordan", "Taylor", "Avery", "Morgan"],
+        "best_friend": ["Jamie", "Casey", "Sam", "Quinn", "Cameron", "Devin"],
+        "mentor": ["Rhea", "Sorin", "Elder Mira", "Kade", "Nyra", "Ori"],
+        "ally": ["Lena", "Milo", "Noah", "Iris", "Cleo", "Theo"],
+        "rival": ["Thorne", "Vera", "Cass", "Drake", "Ren", "Kira"],
+        "antagonist": ["Kael", "Mara", "Silas", "Vesper", "Dorian", "Nyx"],
+        "guide": ["Sage Rowan", "Elder Ila", "Guide Arin", "Mentor Hale", "Advisor Sel"],
+        "stranger": ["Nova", "Echo", "Skye", "Ash", "Rune", "Vale"],
+    }
+    names = pools.get(role, ["Companion"])
+    return names[seed % len(names)]
+
+
+def _mint_id_for_name(player_id: str | None, name: str) -> str:
+    import uuid
+    base = f"{player_id}:name:{name.lower()}" if player_id else f"default:name:{name.lower()}"
+    return str(uuid.uuid5(uuid.NAMESPACE_OID, base))
+
+
+def _inject_intro_sentence(scene_text: str, role: str, name: str) -> str:
+    """Ensure the prose includes an explicit, binder-friendly introduction."""
+    intro = f" You meet a {role.replace('_', ' ')} named {name}."
+    # If text already contains "named {name}", keep as is
+    if f"named {name}" in scene_text:
+        return scene_text
+    # Prefer appending to keep original text intact
+    return (scene_text or "").strip() + intro
+
+
+def apply_character_encounter_plan(story_dict: dict, player_id: str | None, total_scenes: int) -> dict:
+    """Attach planned character introductions and wire them to deterministic NPC IDs.
+
+    - Adds npc_profile entries with explicit names
+    - Adds npcs_present with the deterministic IDs
+    - Ensures scene text includes an explicit "named X" pattern for binders
+    - Populates a lightweight _npc_metadata map at the story root
+    """
+    if not isinstance(story_dict, dict):
+        return story_dict
+    try:
+        anchors = _compute_anchor_indices(total_scenes)
+        # Metadata bucket at the story root
+        npc_meta = story_dict.get("_npc_metadata", {}) or {}
+        # Seed value for deterministic but varied picks
+        seed_val = sum(ord(c) for c in (player_id or "player"))
+        # Walk anchors and modify scenes in place
+        for i, (role, idx) in enumerate(anchors.items()):
+            tag = get_scene_tag(idx)
+            scene = story_dict.get(tag)
+            if not isinstance(scene, dict):
+                continue
+            # Pick name & mint id
+            name = _pick_name_for_role(role, seed_val + i)
+            npc_id = _mint_id_for_name(player_id, name)
+            # Ensure scene prose mentions the character using binder-friendly pattern
+            scene_text = scene.get("text", "")
+            scene["text"] = _inject_intro_sentence(scene_text, role.replace('_', ' '), name)
+            # Ensure presence & profile
+            scene.setdefault("npcs_present", [])
+            if npc_id not in scene["npcs_present"]:
+                scene["npcs_present"].append(npc_id)
+            # Profile block so backend seeds DB with the given name
+            prof = scene.get("npc_profile")
+            if prof is None:
+                scene["npc_profile"] = [{"id": npc_id, "name": name, "recruitable": True, "default_trust": 0.3}]
+            else:
+                # coerce to list and append if not present
+                prof_list = prof if isinstance(prof, list) else [prof]
+                if not any(isinstance(p, dict) and p.get("id") == npc_id for p in prof_list):
+                    prof_list.append({"id": npc_id, "name": name, "recruitable": True, "default_trust": 0.3})
+                scene["npc_profile"] = prof_list
+            # Record lightweight metadata
+            npc_meta[npc_id] = {"full_name": name, "role": role}
+        if npc_meta:
+            story_dict["_npc_metadata"] = npc_meta
+    except Exception as e:
+        logger.warning(f"apply_character_encounter_plan failed: {e}")
+    return story_dict
+
 def create_fallback_30_scene_story(theme: str, intent_vector: list[float], player_name: str = "Adventurer") -> dict:
     """Create a guaranteed 30-scene linear story structure as fallback for offline testing."""
     
@@ -131,6 +238,45 @@ def create_fallback_30_scene_story(theme: str, intent_vector: list[float], playe
         
         # Generate choices (linear progression)
         choices = get_linear_choice_structure(scene_index)
+        
+        # Add 3rd choice and free-text support in fallback mode
+        try:
+            from backend.story.choice_generator import generate_template_choice, should_enable_free_text
+            from backend.story.telemetry import log_choice_generated
+            
+            if choices and scene_index < TOTAL_SCENES - 1:
+                # Generate 3rd choice using templates
+                existing_choice_texts = [ch.get("text", "") for ch in choices.values()]
+                contextual_choice = generate_template_choice(
+                    beat_id="fallback_path",
+                    beat_tags=["fallback", "linear"],
+                    world_hooks=[theme.lower()],
+                    npcs_present=scene.get("npcs_present", [])
+                )
+                
+                if contextual_choice:
+                    choices["3"] = {
+                        "text": contextual_choice.text,
+                        "next": get_scene_tag(scene_index + 1),
+                        "trust_delta": 0.0,
+                        "emotion_delta": [0.1, 0, 0, 0, 0.1, 0, 0, 0]
+                    }
+                    
+                    # Log the generated choice
+                    log_choice_generated(
+                        scene_index=scene_index,
+                        beat_id="fallback_path",
+                        text=contextual_choice.text,
+                        source="fallback3"
+                    )
+                    
+                    # Add free-text flag if enabled
+                    if should_enable_free_text(scene_index):
+                        choices["free_text_enabled"] = True
+                        
+        except Exception as e:
+            print(f"⚠️ Fallback choice generation failed for scene {scene_index}: {e}")
+            # Continue without 3rd choice
         
         # Create scene structure
         # Include minimal beat fields so the debug panel can render in fallback mode
@@ -370,7 +516,13 @@ Respond ONLY with valid JSON containing exactly these 30 scenes: tag_001 through
             }
     # --- END PATCH ---
 
-    # If we are still here, story_dict was produced by LLM path. Assign NPCs to scenes using legacy integrator.
+    # If we are still here, story_dict was produced by LLM path. First, attach planned character encounters.
+    try:
+        story_dict = apply_character_encounter_plan(story_dict, player_id, TOTAL_SCENES)
+    except Exception:
+        pass
+
+    # Then assign NPCs to scenes using legacy integrator for additional placement.
     try:
         from backend.npc.scene_integration import npc_integrator
         npc_assignments = await npc_integrator.assign_npcs_to_scenes(

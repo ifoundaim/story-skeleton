@@ -29,6 +29,9 @@ interface SceneFromAPI {
   soulmap_delta?: Record<string, number> | null
   npcs_present?: string[]
   present_name_map?: Record<string, string>
+  beat_id?: string
+  beat_tags?: string[]
+  scene_phase?: string
 }
 
 interface Scene {
@@ -44,6 +47,9 @@ interface Scene {
   soulmap_delta?: Record<string, number> | null
   npcs_present: string[]
   present_name_map?: Record<string, string>
+  beat_id?: string
+  beat_tags?: string[]
+  scene_phase?: string
 }
 
 export default function SceneView() {
@@ -173,7 +179,10 @@ export default function SceneView() {
     dialogue_type: raw.dialogue_type || 'single',
     media   : raw.media || { images: [], audio: [] },
     npcs_present: Array.isArray(raw.npcs_present) ? raw.npcs_present : [],
-    present_name_map: raw.present_name_map || {}
+    present_name_map: raw.present_name_map || {},
+    beat_id: raw.beat_id,
+    beat_tags: Array.isArray(raw.beat_tags) ? raw.beat_tags : [],
+    scene_phase: raw.scene_phase
   })
 
   const fetchScene = useCallback(async (tag: string) => {
@@ -189,7 +198,10 @@ export default function SceneView() {
         sceneTag: tag,
       })
       console.log('✅ /start response', data)
-      setScene(normalise(data))
+      const normalized = normalise(data)
+      setScene(normalized)
+      // Persist current scene tag to survive refreshes
+      try { localStorage.setItem('lastSceneTag', normalized.sceneTag) } catch {}
       setImageLoaded(false) // Reset image loading state for new scene
       setSceneKey(prev => prev + 1) // Force re-render for animations
     } catch (err) {
@@ -323,6 +335,7 @@ export default function SceneView() {
       })
       console.log('✅ /choose response', nextRaw)
       const nextSceneData = normalise(nextRaw)
+      try { localStorage.setItem('lastSceneTag', nextSceneData.sceneTag) } catch {}
 
       console.log('📤 GET /trust', { soulSeedId })
       const { data: trustRaw } = await axios.get<{ trust: number }>(
@@ -374,6 +387,18 @@ export default function SceneView() {
       setNextScene(null)
     }
   }
+
+  // On mount, restore last scene if we have it and no state was passed
+  useEffect(() => {
+    if (!scene) {
+      const saved = localStorage.getItem('lastSceneTag')
+      const tagToLoad = saved || firstTag
+      if (tagToLoad) {
+        fetchScene(tagToLoad)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (loading) {
     return (
@@ -573,12 +598,80 @@ export default function SceneView() {
             >
               Restart
             </motion.button>
+
+            {/* Start fresh via Director: clears server story state then navigates to Ritual */}
+            <motion.button
+              onClick={async () => {
+                try {
+                  const soulSeedId = localStorage.getItem('soulSeedId') || ''
+                  if (soulSeedId) {
+                    await fetch('/restart', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ soulSeedId })
+                    })
+                  }
+                  // Keep profile; client-side navigate to Ritual to regenerate story via Director
+                  nav('/ritual', { replace: true })
+                } catch (e) {
+                  console.error('Failed to restart via Director', e)
+                  nav('/ritual', { replace: true })
+                }
+              }}
+              className="mt-3 ml-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Start Fresh (Director)
+            </motion.button>
             </motion.div>
           </AnimatePresence>
         </div>
         <div className="scene-sidebar w-full lg:w-80 lg:max-w-sm p-4 lg:ml-4 bg-white/50 backdrop-blur-sm rounded-lg lg:rounded-none border-t lg:border-t-0 lg:border-l border-gray-200 relative">
           <SidebarAccordion
             sections={[
+              {
+                id: 'beat-info',
+                title: 'Story Beat (Debug)',
+                defaultOpen: false,
+                content: (
+                  <div className="text-sm space-y-2">
+                    {scene.beat_id && (
+                      <div>
+                        <span className="font-semibold text-gray-600">Beat ID:</span>
+                        <div className="bg-blue-50 px-2 py-1 rounded text-blue-800 font-mono text-xs mt-1">
+                          {scene.beat_id}
+                        </div>
+                      </div>
+                    )}
+                    {scene.scene_phase && (
+                      <div>
+                        <span className="font-semibold text-gray-600">Phase:</span>
+                        <div className="bg-green-50 px-2 py-1 rounded text-green-800 font-mono text-xs mt-1">
+                          {scene.scene_phase}
+                        </div>
+                      </div>
+                    )}
+                    {scene.beat_tags && scene.beat_tags.length > 0 && (
+                      <div>
+                        <span className="font-semibold text-gray-600">Tags:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {scene.beat_tags.map((tag, idx) => (
+                            <span key={idx} className="bg-purple-50 text-purple-700 px-2 py-1 rounded text-xs">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {!scene.beat_id && !scene.scene_phase && (!scene.beat_tags || scene.beat_tags.length === 0) && (
+                      <div className="text-gray-500 italic text-xs">
+                        No beat information available (likely legacy/LLM-generated scene)
+                      </div>
+                    )}
+                  </div>
+                )
+              },
               {
                 id: 'profiles',
                 title: 'NPCs in Scene',
