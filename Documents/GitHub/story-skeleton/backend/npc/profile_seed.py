@@ -1,4 +1,3 @@
-from npc.service import get_npc_by_id, create_default_npc, ensure_npc_profile as ensure_npc_profile_service
 from db import SessionLocal
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
@@ -68,6 +67,8 @@ def ensure_npc_profile(scene: dict, player_id: str) -> None:
             else:
                 npc_uuid = npc_id
             # Idempotent check per player_id + id
+            # Local import to avoid circular dependency
+            from npc.service import get_npc_by_id, create_default_npc
             existing_npc = get_npc_by_id(player_id, str(npc_uuid), db)
             if existing_npc is not None:
                 # Upgrade legacy names that look like raw UUIDs
@@ -110,4 +111,6 @@ def ensure_npc_profile(scene: dict, player_id: str) -> None:
 
 # New-table helper left as-is
 def ensure_npc_profile_new(npc_id: str, full_name: str, baseline_trust: float = 0.0) -> None:
-    ensure_npc_profile_service(npc_id, full_name, baseline_trust) 
+    # Local import to avoid circular dependency
+    from npc.service import ensure_npc_profile as ensure_npc_profile_service
+    ensure_npc_profile_service(npc_id, full_name, baseline_trust)
