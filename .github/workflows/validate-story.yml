@@ -1,0 +1,81 @@
+name: Story Tree Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validate-story:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        pip install fastapi uvicorn
+        pip install openai
+        pip install python-dotenv
+    
+    - name: Run story validation tests
+      run: |
+        cd backend
+        python -m pytest tests/test_story_validation.py -v
+    
+    - name: Test validation on sample tree
+      run: |
+        cd backend
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        from codex.validate import validate, auto_heal
+        
+        # Create a sample malformed tree
+        sample_tree = {
+            'intro_001': {
+                'text': 'Welcome to the adventure',
+                'choices': {
+                    '1': {'text': 'Begin', 'next': 'tag_001'},
+                    '2': {'text': '', 'next': 'missing_tag'}
+                }
+            },
+            'tag_001': {
+                'text': '',
+                'choices': {
+                    '1': {'text': 'Continue', 'next': 'tag_002'}
+                }
+            }
+        }
+        
+        # Validate the tree
+        issues = validate(sample_tree)
+        print(f'Found {len(issues)} issues:')
+        for issue in issues:
+            print(f'  - {issue}')
+        
+        # Auto-heal the tree
+        healed_tree = auto_heal(sample_tree)
+        print(f'Healed tree has {len(healed_tree)} nodes')
+        
+        # Re-validate after healing
+        remaining_issues = validate(healed_tree)
+        print(f'Remaining issues after healing: {len(remaining_issues)}')
+        for issue in remaining_issues:
+            print(f'  - {issue}')
+        
+        # Fail if critical issues remain
+        if any('intro_001' in issue for issue in remaining_issues):
+            print('Critical issues remain - validation failed!')
+            sys.exit(1)
+        else:
+            print('Validation passed - all critical issues resolved!')
+        " 

@@ -5,9 +5,31 @@ import os
 import random
 import json
 import re
-from .codex_router import TASK_QUEUE, Task
+import logging
+try:
+    from .codex_router import TASK_QUEUE, Task
+except ImportError:
+    # Fallback for when codex module is not available
+    TASK_QUEUE = None
+    Task = None
 
-client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Import story validator
+try:
+    from codex.validate import validate, auto_heal
+except ImportError:
+    # Fallback for when validation module is not available
+    def validate(tree):
+        return []
+    def auto_heal(tree, aggressive=False):
+        return tree
+
+logger = logging.getLogger(__name__)
+
+try:
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+except Exception:
+    # Fallback for when OpenAI is not configured
+    client = None
 
 def strip_code_fences(text):
     # Remove leading ``` or ```json (with optional whitespace/newline)
@@ -16,11 +38,11 @@ def strip_code_fences(text):
     text = re.sub(r"```\s*$", "", text.strip())
     return text
 
-def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict:
+def create_fallback_8_node_story(theme: str, intent_vector: list[float], player_name: str = "Adventurer") -> dict:
     """Create a guaranteed 8-node story structure as fallback"""
     return {
         "tag_001": {
-            "text": f"Your adventure begins in a realm touched by {theme}. Before you lie two paths that will determine your destiny. Each choice you make will shape the legend you become.",
+            "text": f"Welcome, {player_name}. Your adventure begins in a realm touched by {theme}. Before you lie two paths that will determine your destiny. Each choice you make will shape the legend you become.",
             "choices": {
                 "1": {"text": "Take the path of courage and face the unknown", "next": "tag_002"},
                 "2": {"text": "Choose wisdom and seek guidance first", "next": "tag_003"}
@@ -29,7 +51,7 @@ def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict
             "npc_text": ""
         },
         "tag_002": {
-            "text": "Your courageous choice leads you into the heart of adventure. Challenges arise that test your resolve, but with each step forward, you grow stronger and more determined.",
+            "text": f"{player_name}, your courageous choice leads you into the heart of adventure. Challenges arise that test your resolve, but with each step forward, you grow stronger and more determined.",
             "choices": {
                 "1": {"text": "Press onward with unwavering determination", "next": "tag_004"},
                 "2": {"text": "Adapt your strategy and find a clever solution", "next": "tag_005"}
@@ -38,7 +60,7 @@ def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict
             "npc_text": ""
         },
         "tag_003": {
-            "text": "Your wise approach reveals hidden truths and ancient knowledge. Those you meet along the way offer insights that illuminate the path ahead.",
+            "text": f"{player_name}, your wise approach reveals hidden truths and ancient knowledge. Those you meet along the way offer insights that illuminate the path ahead.",
             "choices": {
                 "1": {"text": "Use this knowledge to unlock hidden secrets", "next": "tag_006"},
                 "2": {"text": "Share your wisdom to unite unlikely allies", "next": "tag_005"}
@@ -47,7 +69,7 @@ def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict
             "npc_text": ""
         },
         "tag_004": {
-            "text": "Your determination carries you through trials that would break lesser heroes. Each obstacle overcome reveals new strengths within yourself.",
+            "text": f"{player_name}, your determination carries you through trials that would break lesser heroes. Each obstacle overcome reveals new strengths within yourself.",
             "choices": {
                 "1": {"text": "Channel your inner strength for the final challenge", "next": "tag_007"},
                 "2": {"text": "Inspire others to join your noble cause", "next": "tag_008"}
@@ -56,7 +78,7 @@ def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict
             "npc_text": ""
         },
         "tag_005": {
-            "text": "Your adaptive nature and clever thinking open new possibilities. Creative solutions lead to unexpected alliances and discoveries.",
+            "text": f"{player_name}, your adaptive nature and clever thinking open new possibilities. Creative solutions lead to unexpected alliances and discoveries.",
             "choices": {
                 "1": {"text": "Embrace the power of collaboration", "next": "tag_008"},
                 "2": {"text": "Trust in your own unique abilities", "next": "tag_007"}
@@ -65,7 +87,7 @@ def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict
             "npc_text": ""
         },
         "tag_006": {
-            "text": "The secrets you've unlocked reveal the true nature of your quest. Ancient powers stir, recognizing you as their chosen champion.",
+            "text": f"{player_name}, the secrets you've unlocked reveal the true nature of your quest. Ancient powers stir, recognizing you as their chosen champion.",
             "choices": {
                 "1": {"text": "Accept the mantle of destiny", "next": "tag_007"},
                 "2": {"text": "Forge your own path to victory", "next": "tag_008"}
@@ -74,27 +96,35 @@ def create_fallback_8_node_story(theme: str, intent_vector: list[float]) -> dict
             "npc_text": ""
         },
         "tag_007": {
-            "text": f"Your journey reaches its triumphant conclusion. Through courage, wisdom, and perseverance, you have not only achieved your goal but also discovered the true hero within yourself. Your legend in the realm of {theme} will inspire generations to come. The End.",
+            "text": f"{player_name}, your journey reaches its triumphant conclusion. Through courage, wisdom, and perseverance, you have not only achieved your goal but also discovered the true hero within yourself. Your legend in the realm of {theme} will inspire generations to come. The End.",
             "choices": {},
             "media": {"images": [], "audio": []},
             "npc_text": ""
         },
         "tag_008": {
-            "text": f"Your adventure culminates in an unexpected but deeply satisfying victory. By staying true to your values and embracing both strength and compassion, you have brought balance to the world of {theme}. Your name will be remembered as a beacon of hope. The End.",
+            "text": f"{player_name}, your adventure culminates in an unexpected but deeply satisfying victory. By staying true to your values and embracing both strength and compassion, you have brought balance to the world of {theme}. Your name will be remembered as a beacon of hope. The End.",
             "choices": {},
             "media": {"images": [], "audio": []},
             "npc_text": ""
         }
     }
 
-async def generate_story(player_id: str, theme: str, intent_vector: list[float]) -> tuple[str, dict]:
+async def generate_story(player_id: str, player_name: str, theme: str, intent_vector: list[float]) -> tuple[str, dict]:
+    # If OpenAI client is not available, use fallback story
+    if client is None:
+        print(f"⚠️ OpenAI client not available, using fallback story for {player_name}")
+        story_dict = create_fallback_8_node_story(theme, intent_vector, player_name)
+        first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"
+        return first_tag, story_dict
+    
     prompt = f"""
 You are a mythic storyteller AI.
 Generate a complete 8-node branching story based on:
 
+- Player Name: {player_name}
 - Theme: {theme}
 - Intent: {intent_vector[:10]}... (truncated)
-- Audience: player on a hero's journey
+- Audience: {player_name} on a hero's journey
 
 CRITICAL: You must create exactly 8 complete story nodes. Structure the story as follows:
 
@@ -113,11 +143,12 @@ REQUIREMENTS:
 - Only tag_007 and tag_008 should be ending nodes without choices
 - Each scene must advance the story meaningfully
 - Make the story engaging with meaningful choices that impact the narrative
+- IMPORTANT: Use {player_name}'s actual name in the story text where appropriate to personalize the experience
 
 Example structure:
 {{
   "tag_001": {{
-    "text": "[Opening scene description]",
+    "text": "[Opening scene description mentioning {player_name}]",
     "choices": {{
       "1": {{"text": "[Choice 1 description]", "next": "tag_002"}},
       "2": {{"text": "[Choice 2 description]", "next": "tag_003"}}
@@ -125,7 +156,7 @@ Example structure:
     "media": {{"images": [], "audio": []}}
   }},
   "tag_002": {{
-    "text": "[Continuation scene]",
+    "text": "[Continuation scene with {player_name}]",
     "choices": {{
       "1": {{"text": "[Choice 1]", "next": "tag_004"}},
       "2": {{"text": "[Choice 2]", "next": "tag_005"}}
@@ -183,13 +214,13 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
                 choices["2"] = {"text": "Reach the second conclusion", "next": "tag_008"}
             
             story_dict[tag] = {
-                "text": f"Your journey continues as you face new challenges and opportunities. Each step brings you closer to your destiny.",
+                "text": f"{player_name}, your journey continues as you face new challenges and opportunities. Each step brings you closer to your destiny.",
                 "choices": choices,
                 "media": {"images": [], "audio": []}
             }
         else:  # Create conclusion scenes for nodes 7-8
             story_dict[tag] = {
-                "text": f"Your epic adventure reaches its climax. Through courage, wisdom, and determination, you have achieved your goal and become the hero you were meant to be. Your legend will be remembered for generations. The End.",
+                "text": f"{player_name}, your epic adventure reaches its climax. Through courage, wisdom, and determination, you have achieved your goal and become the hero you were meant to be. Your legend will be remembered for generations. The End.",
                 "choices": {},
                 "media": {"images": [], "audio": []}
             }
@@ -235,7 +266,7 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
                         orin_uuid: -0.1  # Orin is more cautious
                     }
                     ch["emotion_delta"] = [0.3, -0.1, 0, 0, 0.2, 0, 0.1, 0]
-                    ch["soulmap_delta"] = [0.2, 0.1, 0, 0, 0, 0, 0, 0] + [0.0] * 56
+                    # Remove soulmap_delta - will be inferred when choice is made
                 elif (i == 0 and j == 1):
                     # Second choice - caution/wisdom
                     ch["npc_trust_deltas"] = {
@@ -243,14 +274,14 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
                         orin_uuid: 0.2    # Orin appreciates wisdom
                     }
                     ch["emotion_delta"] = [-0.2, 0.2, 0, 0.1, 0, 0, 0, -0.3]
-                    ch["soulmap_delta"] = [-0.1, 0.2, 0.1, 0, 0, 0, 0, 0] + [0.0] * 56
+                    # Remove soulmap_delta - will be inferred when choice is made
                 elif (i == 1 and j == 0):
                     # Compassion/helping - affects present NPC
                     present_npcs = node.get("npcs_present", [])
                     if present_npcs:
                         ch["npc_trust_deltas"] = {present_npcs[0]: 0.3}
                     ch["emotion_delta"] = [0, 0, 0.4, -0.2, 0, 0.1, 0, 0]
-                    ch["soulmap_delta"] = [0, 0, 0.3, 0.2, 0, 0, 0, 0] + [0.0] * 56
+                    # Remove soulmap_delta - will be inferred when choice is made
                 elif (i == 2 and j == 0):
                     # Different NPC interaction
                     present_npcs = node.get("npcs_present", [])
@@ -277,7 +308,22 @@ Respond ONLY with valid JSON containing exactly these 8 nodes: tag_001, tag_002,
     
     if len(story_dict) < 8 or continuing_nodes < 6:
         print(f"DEBUG: Insufficient story structure, creating fallback 8-node structure")
-        story_dict = create_fallback_8_node_story(theme, intent_vector)
+        story_dict = create_fallback_8_node_story(theme, intent_vector, player_name)
+    
+    # --- VALIDATION & AUTO-HEALING ---
+    issues = validate(story_dict)
+    if issues:
+        logger.warning(f"Found {len(issues)} validation issues: {issues}")
+        story_dict = auto_heal(story_dict)
+        logger.info("Auto-healing completed")
+        
+        # Re-validate after healing
+        remaining_issues = validate(story_dict)
+        if remaining_issues:
+            logger.error(f"Critical issues remain after healing: {remaining_issues}")
+            # Only abort if intro_001 is missing or healing completely failed
+            if "intro_001" not in story_dict:
+                raise Exception("Critical: Missing intro_001 scene after healing")
     
     first_tag = list(story_dict.keys())[0] if story_dict else "tag_001"
     print(f"DEBUG: story_dict keys: {list(story_dict.keys())}")

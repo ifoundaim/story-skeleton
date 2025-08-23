@@ -1,0 +1,3 @@
+Line 53 change:
+FROM: fetch(`/test-simple-soul/${playerId}`)
+TO:   fetch(`/v1/soulmap/player/${playerId}`)

@@ -4,6 +4,43 @@
 
 ## 🎯 Recent Sprint Completions
 
+### ✅ Story Tree Validator & Auto-Healing System (SPR-VALID01) - COMPLETED
+**Automated Story Tree Validation & Auto-Healing System**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Automated story tree validation with comprehensive issue detection
+  - Auto-healing system that fixes common story tree problems
+  - Integration into story generation pipeline with logging
+  - Development-only validation endpoint for testing
+  - Comprehensive unit tests for validation and healing logic
+  - CI integration with GitHub Actions validation workflow
+
+**Technical Implementation:**
+- **Core Validator:** `codex/validate/story_validator.py` - `validate()` and `auto_heal()` functions
+- **Generator Integration:** `purpose_agents/generate_story.py` - Validation hook after story generation
+- **API Endpoint:** `backend/main.py` - `/validate` endpoint for development testing
+- **Testing:** `backend/tests/test_story_validation.py` - Comprehensive test suite
+- **CI Integration:** `.github/workflows/validate-story.yml` - GitHub Actions validation workflow
+- **Module Structure:** `codex/validate/__init__.py` - Clean module exports
+
+**Validation Features:**
+- **Issue Detection:** Duplicate tags, missing text/choices, undefined targets, orphaned scenes
+- **Auto-Healing:** Placeholder text insertion, missing node creation, choice relinking
+- **Aggressive Pruning:** Optional removal of unreachable nodes
+- **Performance:** Sub-100ms runtime on typical 200-node trees
+- **Safety:** Only heals at generation time, never mutates in-play trees
+- **Logging:** Comprehensive warning and error logging for debugging
+
+**Validation Checks:**
+- **Structural Integrity:** Missing intro_001, duplicate tags, invalid node structures
+- **Content Completeness:** Missing text, placeholder text detection
+- **Choice Validity:** Missing choice text, undefined next targets
+- **Reachability:** Orphaned scenes not reachable from intro_001
+- **Data Consistency:** Required fields presence and type validation
+
+---
+
 ### ✅ Soul Map v2 Sprint (SM02) - COMPLETED
 **Unify on 64-Dimensional Vector System**
 - **Status:** ✅ **COMPLETED** 

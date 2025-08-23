@@ -6,6 +6,7 @@ import axios                                 from 'axios'
 import SoulMapWidget from './SoulMapWidget'
 import Dialogue from './Dialogue'
 import EmotionGraph from './EmotionGraph'
+import { DeltaBadge } from '../components/DeltaBadge'
 
 interface MediaAssets {
   images: string[]
@@ -19,6 +20,7 @@ interface SceneFromAPI {
   trust?:   number | null
   media?:   MediaAssets
   npc_text_dynamic?: string
+  soulmap_delta?: Record<string, number> | null
 }
 
 interface Scene {
@@ -29,6 +31,7 @@ interface Scene {
   npc_text?: string
   npc_text_dynamic?: string
   media:    MediaAssets
+  soulmap_delta?: Record<string, number> | null
 }
 
 export default function SceneView() {
@@ -65,6 +68,12 @@ export default function SceneView() {
   // @ts-ignore - nextScene is used for transition state management
   const [nextScene, setNextScene] = useState<Scene | null>(null)
   const [sceneKey, setSceneKey] = useState(0) // Force re-render of scene content
+  
+  // Delta badge states
+  const [deltaBadges, setDeltaBadges] = useState<Array<{trait: string, value: number, id: string}>>([])
+  
+  // Soulmap refresh state
+  const [soulmapRefreshKey, setSoulmapRefreshKey] = useState(0)
 
   // Animation variants
   const sceneVariants = {
@@ -294,14 +303,39 @@ export default function SceneView() {
       const finalNextScene = { ...nextSceneData, trust: trustRaw.trust }
       setNextScene(finalNextScene)
       
-      // Delay scene update to allow for exit animation
+      // Handle soulmap delta badges
+      if (nextRaw.soulmap_delta) {
+        const deltas = Object.entries(nextRaw.soulmap_delta)
+          .filter(([, value]) => Math.abs(value) > 0.01)
+          .map(([trait, value]) => ({
+            trait: trait.replace(/_/g, ' '),
+            value: value as number,
+            id: `${trait}-${Date.now()}-${Math.random()}`
+          }))
+        
+        if (deltas.length > 0) {
+          setDeltaBadges(deltas)
+          
+          // Clear badges after 2 seconds to give time to see them
+          setTimeout(() => {
+            setDeltaBadges([])
+          }, 2000)
+          
+          // Refresh soulmap data after a short delay to show updated values
+          setTimeout(() => {
+            setSoulmapRefreshKey(prev => prev + 1)
+          }, 1000) // Refresh soulmap 1 second after badges appear
+        }
+      }
+      
+      // Delay scene update to allow for delta badges to be visible
       setTimeout(() => {
         setScene(finalNextScene)
         setImageLoaded(false) // Reset image loading for new scene
         setSceneKey(prev => prev + 1) // Force re-render
         setNextScene(null)
         setIsTransitioning(false)
-      }, 300) // Half of the transition duration for smooth crossfade
+      }, 2500) // Wait 2.5 seconds to ensure badges are visible for 2 seconds
       
     } catch (err) {
       console.error('❌ Something went wrong advancing the story:', err)
@@ -401,6 +435,40 @@ export default function SceneView() {
                     <p className="text-gray-500">Loading scene image...</p>
                   </motion.div>
                 )}
+                
+                {/* Delta Badges Container - Overlay on Image */}
+                <div 
+                  className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+                  aria-live="polite"
+                >
+                  <AnimatePresence>
+                    {deltaBadges.map((badge) => (
+                      <DeltaBadge
+                        key={badge.id}
+                        trait={badge.trait}
+                        value={badge.value}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
+            
+            {/* Delta Badges Container - For when no image is present */}
+            {scene.media.images.length === 0 && (
+              <div 
+                className="relative flex items-center justify-center pointer-events-none z-50"
+                aria-live="polite"
+              >
+                <AnimatePresence>
+                  {deltaBadges.map((badge) => (
+                    <DeltaBadge
+                      key={badge.id}
+                      trait={badge.trait}
+                      value={badge.value}
+                    />
+                  ))}
+                </AnimatePresence>
               </div>
             )}
 
@@ -478,8 +546,8 @@ export default function SceneView() {
             </motion.div>
           </AnimatePresence>
         </div>
-        <div className="scene-sidebar w-full lg:w-80 lg:max-w-sm p-4 lg:ml-4 bg-white/50 backdrop-blur-sm rounded-lg lg:rounded-none border-t lg:border-t-0 lg:border-l border-gray-200">
-          <SoulMapWidget playerId={playerId || 'demo'} />
+        <div className="scene-sidebar w-full lg:w-80 lg:max-w-sm p-4 lg:ml-4 bg-white/50 backdrop-blur-sm rounded-lg lg:rounded-none border-t lg:border-t-0 lg:border-l border-gray-200 relative">
+          <SoulMapWidget playerId={playerId || 'demo'} refreshKey={soulmapRefreshKey} />
           
           {/* Add test NPC dialogue button */}
           <button

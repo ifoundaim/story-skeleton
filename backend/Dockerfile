@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
 COPY purpose_agents/ ./purpose_agents/
+COPY codex/ ./codex/
 
 EXPOSE 8000
 

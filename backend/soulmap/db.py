@@ -5,7 +5,7 @@ from pgvector.sqlalchemy import Vector
 import uuid
 
 # Use the shared database configuration
-from backend.db import engine, SessionLocal
+from db import engine, SessionLocal
 
 Base = declarative_base()
 

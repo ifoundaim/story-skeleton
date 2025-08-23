@@ -3,8 +3,8 @@ Story condition validation and evaluation for choice availability.
 """
 
 from typing import Dict, Any, List, Tuple, Optional
-from backend.npc.service import get_trust_scores, is_companion
-from backend.emotion.router import load_emotion_state
+from npc.service import get_trust_scores, is_companion
+from emotion.router import load_emotion_state
 
 def get_dominant_emotion(emotion_vector: List[float]) -> Tuple[str, float]:
     """Get the dominant emotion and its intensity from an emotion vector."""

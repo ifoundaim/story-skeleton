@@ -8,7 +8,13 @@ import json
 import os
 from typing import Dict, List, Optional, Any
 import openai
-from backend.soulmap.mapping import SoulTrait, clip_vector, dict_to_vec
+import sys
+import os
+
+# Add the backend directory to the path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+
+from soulmap.mapping import SoulTrait, clip_vector, dict_to_vec
 
 SYSTEM_PROMPT = """You are a narrative analyst specializing in psychological trait analysis.
 
