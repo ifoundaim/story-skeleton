@@ -1,0 +1,50 @@
+.env
+backend/.env
+/tests/__pycache__/
+
+# Python cache and build artefacts
+__pycache__/
+backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+node_modules
+node_modules
+
+# Virtual environments
+venv/
+venv-py311/
+.venv/
+env/
+ENV/
+
+# Ignore MinIO system files
+minio-data/
+minio-data-backup-*/
+minio-data/.minio.sys/
+backend/test.db
+
+# IDE and editor files
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Test files and temporary files
+test_*.py
+temp_*.txt
+*.tmp
+*.bak

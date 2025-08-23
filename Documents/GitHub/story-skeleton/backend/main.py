@@ -27,9 +27,10 @@ import sys
 from typing import Any, Union, Dict, Optional, cast, List
 
 # 4️⃣ Third-party libs
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.websockets import WebSocketDisconnect
 from pydantic import BaseModel, Field, constr, ConfigDict
 
 # ─── Path patching for internal modules ────────────────────────────────────────
@@ -98,6 +99,41 @@ def _extract_candidate_names(text: str) -> list[str]:
             names.append(w)
     return names[:3]
 
+# ─── Animal/creature mention detection for NPC binding ─────────────────────────
+_ANIMAL_PHRASES = [
+    # two-word specific phrases first (checked in order)
+    "white wolf", "black wolf", "grey wolf", "wise owl", "snow owl",
+    # single nouns
+    "owl", "wolf", "fox", "raven", "eagle", "hawk", "dove", "bear",
+    "lion", "tiger", "deer", "stag", "horse", "hound", "dog", "cat",
+    "serpent", "dragon"
+]
+
+def _slugify(s: str) -> str:
+    import re as __re
+    return __re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+def _detect_animal_phrase(text: str) -> str | None:
+    """Detect an animal mention in free prose. Returns the matched phrase (as it
+    appears) or None. Matching is case-insensitive and prefers longer phrases.
+    Example: "white wolf" → "white wolf"; "owl" → "owl".
+    """
+    if not text:
+        return None
+    lowered = text.lower()
+    for phrase in _ANIMAL_PHRASES:
+        if phrase in lowered:
+            # return phrase in original casing if possible
+            try:
+                import re as __re
+                m = __re.search(rf"\b{phrase}\b", text, flags=__re.IGNORECASE)
+                if m:
+                    return m.group(0)
+            except Exception:
+                pass
+            return phrase
+    return None
+
 # ─── File paths ───────────────────────────────────────────────────────────────
 DATA_FILE   = str(BASE_DIR / "player_profile.json")
 STORY_FILE  = str(BASE_DIR / "story.json")
@@ -107,6 +143,13 @@ UPLOADS_DIR = BASE_DIR.parent / "uploads"
 
 app = FastAPI(title="SoulSeed API")
 
+# Import WebSocket manager
+try:
+    from websocket_manager import websocket_manager
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    WEBSOCKET_AVAILABLE = False
+    websocket_manager = None
 
 app.include_router(soulmap_router, prefix="/v1")
 app.include_router(npc_router, prefix='/npc')
@@ -675,14 +718,65 @@ def _scene_to_response(tag: str, story: dict, player_id: str = "", story_data: O
                         except Exception as e:
                             print(f"[DEBUG] Failed to ensure NPC profiles: {e}")
                             
+                        # Open-World Role Induction for present NPCs
+                        try:
+                            from npc.service import get_npc_by_id
+                            from db import SessionLocal as _SL3
+                            db3 = _SL3()
+                            try:
+                                for nid in (npcs_present or []):
+                                    npc_obj = get_npc_by_id(player_id, str(nid), db3)
+                                    if not npc_obj:
+                                        continue
+                                    meta = getattr(npc_obj, 'meta', {}) or {}
+                                    role_props = meta.get('role_properties') or {}
+                                    conf = float(meta.get('role_confidence') or 0.0)
+                                    needs_update = conf < 0.5 or not role_props
+                                    if needs_update:
+                                        from npc.role_induction import induce_role
+                                        scene_text = str(scene.get('text', ''))
+                                        dialogue_snips = [d.get('text','') for d in (scene.get('npc_dialogue') or []) if isinstance(d, dict)]
+                                        hooks = list((scene.get('beat_tags') or []) + (scene.get('narrative_purpose') or []))
+                                        seed_value = abs(hash(f"{player_id}:{tag}:{nid}")) % (2**31)
+                                        inferred = induce_role(None, scene_text, dialogue_snips, hooks, "Hero", seed_value)
+                                        meta['role_properties'] = {
+                                            'function_probs': inferred.get('function_probs'),
+                                            'stance_probs': inferred.get('stance_probs'),
+                                            'capabilities': inferred.get('capabilities'),
+                                            'species': inferred.get('species'),
+                                        }
+                                        meta['role_confidence'] = inferred.get('confidence', 0.6)
+                                        npc_obj.meta = meta
+                                db3.commit()
+                            finally:
+                                db3.close()
+                        except Exception as _ind_e:
+                            print(f"[DEBUG] Role induction error: {_ind_e}")
+
                 except Exception as e:
                     print(f"[DEBUG] Failed to get dynamic NPCs, using fallback: {e}")
                     # Continue with existing npcs_present logic
                 
-                # If no npcs_present defined, DO NOT auto-inject companions from DB.
-                # Rely strictly on beat-driven npcs_present or role/name detection from prose.
-                if not npcs_present:
-                    print("[DEBUG] Auto-companion injection disabled; relying on beat/role-driven NPCs")
+                # Detect animal/creature mentions and include them in npcs_present even if other NPCs exist
+                try:
+                    animal_phrase = _detect_animal_phrase(scene.get("text", ""))
+                except Exception:
+                    animal_phrase = None
+                if animal_phrase:
+                    import uuid as _uuid
+                    key = _slugify(animal_phrase)
+                    animal_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"creature:{key}"))
+                    if animal_id not in (npcs_present or []):
+                        npcs_present = (npcs_present or []) + [animal_id]
+                        scene["npcs_present"] = npcs_present
+                    # Ensure present_name_map reflects the animal
+                    _pnm = scene.get("_present_name_map", {}) or {}
+                    if animal_id not in _pnm:
+                        _pnm[animal_id] = animal_phrase.title()
+                        scene["_present_name_map"] = _pnm
+                    print(f"[DEBUG] Animal binding ensured: {animal_id} -> {animal_phrase}")
+                else:
+                    print("[DEBUG] No animal phrase detected in scene text")
                 
                 # Generate group dialogue if multiple NPCs present
                 if len(npcs_present) > 1:
@@ -1284,25 +1378,69 @@ async def _choose_py(req: ChoiceRequest):
     if isinstance(choice_obj, dict) and "npc_trust_deltas" in choice_obj:
         npc_trust_deltas = choice_obj.get("npc_trust_deltas", {})
     
-    # Apply trust deltas
+    # Apply trust deltas and emit toasts (fallback path integration)
     if legacy_trust_delta != 0.0 or npc_trust_deltas:
         try:
-            from npc.service import apply_trust, apply_trust_to_multiple
+            from npc.service import apply_trust, apply_trust_to_multiple, get_npc_by_id
             from db import SessionLocal
+            from story.telemetry import log_toast_emitted
+            import asyncio as _asyncio
+            import uuid as _uuid
             db = SessionLocal()
             
             # Apply legacy trust delta to default companion
             if legacy_trust_delta != 0.0:
-                # Generate consistent UUID for default companion
-                import uuid
-                companion_uuid = uuid.uuid5(uuid.NAMESPACE_OID, f"default:companion")
+                companion_uuid = _uuid.uuid5(_uuid.NAMESPACE_OID, f"default:companion")
                 apply_trust(player_id, str(companion_uuid), legacy_trust_delta, db)
                 print(f"[main] Applied legacy trust delta {legacy_trust_delta} to companion")
+                # Emit toast for legacy trust delta
+                if WEBSOCKET_AVAILABLE and websocket_manager is not None:
+                    label = "Companion trust"
+                    try:
+                        npc_obj = get_npc_by_id(player_id, str(companion_uuid), db)
+                        if npc_obj and getattr(npc_obj, "name", None):
+                            label = f"Trust with {npc_obj.name}"
+                    except Exception:
+                        pass
+                    try:
+                        current_scene = tree.get(req.sceneTag, {}) or {}
+                        scene_index = int(current_scene.get("scene_index", 0))
+                    except Exception:
+                        scene_index = 0
+                    _asyncio.create_task(websocket_manager.emit_consequence_toast(
+                        kind="reputation_shift", label=label, delta=float(legacy_trust_delta), npc_id=str(companion_uuid)
+                    ))
+                    try:
+                        log_toast_emitted(scene_index=scene_index, kind="reputation_shift", label=label, npc_id=str(companion_uuid), delta=float(legacy_trust_delta))
+                    except Exception:
+                        pass
             
             # Apply multi-NPC trust deltas
             if npc_trust_deltas:
                 apply_trust_to_multiple(player_id, npc_trust_deltas, db)
                 print(f"[main] Applied multi-NPC trust deltas: {npc_trust_deltas}")
+                # Emit a toast per NPC
+                for nid, d in npc_trust_deltas.items():
+                    label = "Trust changed"
+                    try:
+                        npc_obj = get_npc_by_id(player_id, str(nid), db)
+                        if npc_obj and getattr(npc_obj, "name", None):
+                            label = f"Trust with {npc_obj.name}"
+                    except Exception:
+                        pass
+                    try:
+                        current_scene = tree.get(req.sceneTag, {}) or {}
+                        scene_index = int(current_scene.get("scene_index", 0))
+                    except Exception:
+                        scene_index = 0
+                    if WEBSOCKET_AVAILABLE and websocket_manager is not None:
+                        _asyncio.create_task(websocket_manager.emit_consequence_toast(
+                            kind="reputation_shift", label=label, delta=float(d), npc_id=str(nid)
+                        ))
+                    try:
+                        log_toast_emitted(scene_index=scene_index, kind="reputation_shift", label=label, npc_id=str(nid), delta=float(d))
+                    except Exception:
+                        pass
             
             db.close()
         except Exception as e:
@@ -2047,6 +2185,27 @@ def api_ritual_get():
     Returns 200 with instructions instead of a 405 so dev tools don't flag errors.
     """
     return {"message": "Use POST /ritual to perform the ritual."}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time consequence feedback."""
+    if not WEBSOCKET_AVAILABLE:
+        await websocket.close(code=1008, reason="WebSocket not available")
+        return
+    
+    await websocket_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive and handle any incoming messages
+            data = await websocket.receive_text()
+            # For now, just echo back - could be extended for player-specific features
+            await websocket.send_text(f"Message received: {data}")
+    except WebSocketDisconnect:
+        websocket_manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        websocket_manager.disconnect(websocket)
 
 
 

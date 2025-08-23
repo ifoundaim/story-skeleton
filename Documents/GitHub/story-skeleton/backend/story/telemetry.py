@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def log_scene_decision(
@@ -67,6 +67,25 @@ def log_consequence_change(
         "scene_index": scene_index,
         "consequence_changes": changes,
         "type": "consequence_change"
+    }
+    print(json.dumps({"telemetry": record}))
+
+
+def log_toast_emitted(
+    scene_index: int,
+    kind: str,
+    label: str,
+    npc_id: Optional[str] = None,
+    delta: Optional[float] = None
+) -> None:
+    """Log when a consequence toast is emitted."""
+    record = {
+        "scene_index": scene_index,
+        "kind": kind,
+        "label": label,
+        "npc_id": npc_id,
+        "delta": delta,
+        "type": "toast_emitted"
     }
     print(json.dumps({"telemetry": record}))
 

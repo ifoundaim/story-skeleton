@@ -71,6 +71,12 @@ export default defineConfig(({ mode }) => {
           target: backend,
           changeOrigin: true,
         },
+        // WebSocket endpoint for consequence toasts
+        '/ws': {
+          target: backend,
+          changeOrigin: true,
+          ws: true,
+        },
         '/flow': {
           target: backend,
           changeOrigin: true,

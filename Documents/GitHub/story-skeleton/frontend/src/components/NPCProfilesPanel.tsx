@@ -1,12 +1,17 @@
-import React from 'react'
+
 
 type Info = { name: string; trust: number }
 
 const isUuidLike = (s?: string) => !!s && /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(s)
 
 export default function NPCProfilesPanel({ presentNpcIds, npcInfoById, nameMap }: { presentNpcIds: string[]; npcInfoById: Record<string, Info>; nameMap?: Record<string, string> }) {
-  // Only show entries when we have a resolved, non-UUID-like name.
+  // Only show entries that are actually present in the scene AND have a resolved, non-UUID-like name.
   const displayNpcIds = (presentNpcIds || []).filter((id) => {
+    // Must be in presentNpcIds (actually present in scene)
+    if (!presentNpcIds.includes(id)) {
+      return false
+    }
+    // Must have a resolved, non-UUID-like name
     const candidate = nameMap?.[id] || npcInfoById[id]?.name || ''
     return candidate && !isUuidLike(candidate)
   })

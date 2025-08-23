@@ -134,13 +134,38 @@ def _mint_id_for_name(player_id: str | None, name: str) -> str:
 
 
 def _inject_intro_sentence(scene_text: str, role: str, name: str) -> str:
-    """Ensure the prose includes an explicit, binder-friendly introduction."""
-    intro = f" You meet a {role.replace('_', ' ')} named {name}."
-    # If text already contains "named {name}", keep as is
-    if f"named {name}" in scene_text:
-        return scene_text
-    # Prefer appending to keep original text intact
-    return (scene_text or "").strip() + intro
+    """Integrate NPC introduction diegetically instead of a tacked-on sentence.
+
+    Strategy:
+    - If the prose mentions a creature/mentor/partner generically, weave the name into that sentence.
+    - Otherwise, insert one short line after the first sentence that flows with the scene.
+    - Always include the binder-friendly pattern "named {name}" for downstream binding.
+    """
+    text = (scene_text or "").strip()
+    if not text:
+        return f"You meet a {role} named {name}."
+    if f"named {name}" in text:
+        return text
+    # Try to weave into an existing generic noun mention
+    import re as _re
+    generic_roles = ["mentor", "guide", "partner", "ally", "stranger", "rival", "antagonist", "sage", "owl", "wolf", "creature"]
+    for r in generic_roles:
+        m = _re.search(rf"\b{r}\b", text, flags=_re.IGNORECASE)
+        if m:
+            start, end = m.span()
+            before, word, after = text[:start], text[start:end], text[end:]
+            # Maintain punctuation/grammar: if followed by 'the' or 'a', insert after that
+            if after.lstrip().lower().startswith("named "):
+                return text
+            return f"{before}{word} named {name}{after}"
+    # Fallback: insert a flowing clause after first sentence end
+    m = _re.search(r"[.!?]", text)
+    if m and m.end() < len(text) - 1:
+        idx = m.end()
+        connective = "As the moment turns,"
+        return f"{text[:idx]} {connective} a {role} named {name} enters the scene.{text[idx:]}"
+    # Last resort: append, but with connective
+    return f"{text} As the moment settles, a {role} named {name} appears."
 
 
 def apply_character_encounter_plan(story_dict: dict, player_id: str | None, total_scenes: int) -> dict:

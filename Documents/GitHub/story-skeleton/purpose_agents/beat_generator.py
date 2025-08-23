@@ -239,7 +239,7 @@ async def generate_story_directed(
 
         tension_before = state.tension
         before_trust = {nid: state.npcs[nid]["trust"] for nid in npcs_present}
-        apply_effects(picked, state, npcs_present)
+        apply_effects(picked, state, npcs_present, player_id)
         after_trust = {nid: state.npcs[nid]["trust"] for nid in npcs_present}
         trust_changes = {nid: round(after_trust[nid] - before_trust[nid], 3) for nid in npcs_present}
 

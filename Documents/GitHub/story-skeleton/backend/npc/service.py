@@ -61,6 +61,11 @@ def create_default_npc(player_id: str, npc_id: str, name: str, db: Session) -> N
             pass
         return existing_npc
     
+    # Double-check to avoid race conditions
+    existing_npc = db.query(NPCState).filter_by(player_id=player_id, id=npc_uuid).first()
+    if existing_npc:
+        return existing_npc
+    
     friendly_name = name or _friendly_name_for_uuid(npc_uuid)
     npc = NPCState(
         id=npc_uuid, 
@@ -69,10 +74,21 @@ def create_default_npc(player_id: str, npc_id: str, name: str, db: Session) -> N
         trust=0.0, 
         meta={"personality": "balanced", "created": True}
     )
-    db.add(npc)
-    db.commit()
-    db.refresh(npc)
-    return npc
+    try:
+        db.add(npc)
+        db.commit()
+        db.refresh(npc)
+        return npc
+    except Exception as e:
+        # Handle duplicate key constraint violation
+        db.rollback()
+        # Try to get the existing NPC
+        existing_npc = db.query(NPCState).filter_by(player_id=player_id, id=npc_uuid).first()
+        if existing_npc:
+            return existing_npc
+        else:
+            # Re-raise if it's not a duplicate key issue
+            raise e
 
 def apply_trust(player_id: str, npc_id: str, delta: float, db: Session) -> NPCState:
     # Ensure npc_id is a UUID object
@@ -126,22 +142,33 @@ def ensure_default_npcs(player_id: str, db: Session) -> List[NPCState]:
     """Ensure player has default NPCs (Lyra and Orin) using global stable UUIDs.
     IDs match story assignment schema (uuid5(NAMESPACE_OID, "default:<name>")).
     """
-    existing_npcs = get_state(player_id, db)
-    existing_ids = {str(npc.id) for npc in existing_npcs}
+    try:
+        existing_npcs = get_state(player_id, db)
+        existing_ids = {str(npc.id) for npc in existing_npcs}
 
-    default_specs = [
-        ("lyra", "Lyra"),
-        ("orin", "Orin"),
-    ]
+        default_specs = [
+            ("lyra", "Lyra"),
+            ("orin", "Orin"),
+        ]
 
-    created_npcs: List[NPCState] = []
-    for key, full_name in default_specs:
-        stable_uuid = uuid.uuid5(uuid.NAMESPACE_OID, f"default:{key}")
-        if str(stable_uuid) not in existing_ids:
-            npc = create_default_npc(player_id, str(stable_uuid), full_name, db)
-            created_npcs.append(npc)
+        created_npcs: List[NPCState] = []
+        for key, full_name in default_specs:
+            stable_uuid = uuid.uuid5(uuid.NAMESPACE_OID, f"default:{key}")
+            if str(stable_uuid) not in existing_ids:
+                try:
+                    npc = create_default_npc(player_id, str(stable_uuid), full_name, db)
+                    created_npcs.append(npc)
+                except Exception as e:
+                    # Handle race condition where NPC was created by another request
+                    print(f"Warning: Failed to create default NPC {full_name}: {e}")
+                    # Continue with other NPCs
+                    pass
 
-    return get_state(player_id, db)
+        return get_state(player_id, db)
+    except Exception as e:
+        print(f"Error in ensure_default_npcs: {e}")
+        # Return existing NPCs even if creation failed
+        return get_state(player_id, db)
 
 # New functions for the NPC table (Sprint NPC01 requirements)
 

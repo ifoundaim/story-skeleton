@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consequence Toast Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            max-width: 300px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Consequence Toast System Test</h1>
+        
+        <div id="status" class="status disconnected">
+            Disconnected from WebSocket
+        </div>
+        
+        <div>
+            <h3>Test Controls</h3>
+            <button onclick="testPromiseSet()">Test Promise Set</button>
+            <button onclick="testReputationShift()">Test Reputation Shift</button>
+            <button onclick="testFlagSet()">Test Flag Set</button>
+            <button onclick="testPromiseFulfilled()">Test Promise Fulfilled</button>
+            <button onclick="testResourceChange()">Test Resource Change</button>
+            <button onclick="testAll()">Test All Events</button>
+        </div>
+        
+        <div>
+            <h3>Connection Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let toastCounter = 0;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = 'Connected to WebSocket';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = 'Disconnected from WebSocket';
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.id = `toast-${toastCounter++}`;
+            
+            const icon = {
+                'promise_set': '🤝',
+                'reputation_shift': '⭐',
+                'flag_set': '🚩',
+                'promise_fulfilled': '✅',
+                'resource_change': '💎'
+            }[type] || '📝';
+            
+            toast.innerHTML = `${icon} ${message}`;
+            document.body.appendChild(toast);
+            
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 3000);
+        }
+
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket('ws://localhost:8000/ws');
+                
+                ws.onopen = function() {
+                    log('WebSocket connected');
+                    updateStatus(true);
+                };
+                
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Received: ${JSON.stringify(data)}`);
+                        
+                        if (data.type === 'consequence_toast') {
+                            showToast(data.payload.label, data.payload.kind);
+                        }
+                    } catch (e) {
+                        log(`Error parsing message: ${e.message}`);
+                    }
+                };
+                
+                ws.onclose = function() {
+                    log('WebSocket disconnected');
+                    updateStatus(false);
+                };
+                
+                ws.onerror = function(error) {
+                    log(`WebSocket error: ${error}`);
+                    updateStatus(false);
+                };
+                
+            } catch (error) {
+                log(`Connection error: ${error.message}`);
+                updateStatus(false);
+            }
+        }
+
+        function sendEvent(event) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(event));
+                log(`Sent: ${JSON.stringify(event)}`);
+            } else {
+                log('WebSocket not connected');
+            }
+        }
+
+        function testPromiseSet() {
+            sendEvent({
+                type: 'consequence_toast',
+                payload: {
+                    kind: 'promise_set',
+                    label: 'Promise made to Alice',
+                    npc_id: 'alice'
+                }
+            });
+        }
+
+        function testReputationShift() {
+            sendEvent({
+                type: 'consequence_toast',
+                payload: {
+                    kind: 'reputation_shift',
+                    label: 'Alice trust ↑',
+                    delta: 0.1,
+                    npc_id: 'alice'
+                }
+            });
+        }
+
+        function testFlagSet() {
+            sendEvent({
+                type: 'consequence_toast',
+                payload: {
+                    kind: 'flag_set',
+                    label: 'Flag set: important_decision'
+                }
+            });
+        }
+
+        function testPromiseFulfilled() {
+            sendEvent({
+                type: 'consequence_toast',
+                payload: {
+                    kind: 'promise_fulfilled',
+                    label: 'Promise fulfilled'
+                }
+            });
+        }
+
+        function testResourceChange() {
+            sendEvent({
+                type: 'consequence_toast',
+                payload: {
+                    kind: 'resource_change',
+                    label: 'gold ↑',
+                    delta: 100
+                }
+            });
+        }
+
+        function testAll() {
+            const events = [
+                { fn: testPromiseSet, delay: 0 },
+                { fn: testReputationShift, delay: 1000 },
+                { fn: testFlagSet, delay: 2000 },
+                { fn: testPromiseFulfilled, delay: 3000 },
+                { fn: testResourceChange, delay: 4000 }
+            ];
+            
+            events.forEach(event => {
+                setTimeout(event.fn, event.delay);
+            });
+        }
+
+        // Connect on page load
+        window.onload = function() {
+            log('Page loaded, connecting to WebSocket...');
+            connectWebSocket();
+        };
+    </script>
+</body>
+</html>

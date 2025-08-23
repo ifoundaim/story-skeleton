@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from .state import StoryState
+
+# Import WebSocket manager and telemetry
+try:
+    from ..websocket_manager import websocket_manager
+    from .telemetry import log_toast_emitted
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    WEBSOCKET_AVAILABLE = False
+    websocket_manager = None
+    def log_toast_emitted(*args, **kwargs):
+        pass
 
 
 def _parse_range(value: str) -> Optional[List[float]]:
@@ -67,6 +79,44 @@ def _check_world_flag_precondition(key: str, expected: Any, state: StoryState) -
         return current_value == expected
     
     return False
+
+# ─── Property DSL predicates ─────────────────────────────────────────────────
+def _prop_ge(npc_props: dict, path: str, threshold: float) -> bool:
+    cur = npc_props
+    for part in path.split('.'):
+        if not isinstance(cur, dict) or part not in cur:
+            return False
+        cur = cur[part]
+    try:
+        return float(cur) >= float(threshold)
+    except Exception:
+        return False
+
+def _prop_eq(npc_props: dict, path: str, value: str) -> bool:
+    cur = npc_props
+    for part in path.split('.'):
+        if not isinstance(cur, dict) or part not in cur:
+            return False
+        cur = cur[part]
+    return str(cur) == value
+
+def _evaluate_property_predicate(predicate: str, npc_props: dict) -> bool:
+    # Examples: "function.advisor >= 0.4", "capability.guidance >= 0.5",
+    #           "stance.ally >= 0.5", "species == animal", "species != human"
+    try:
+        if '>=' in predicate:
+            left, right = [s.strip() for s in predicate.split('>=', 1)]
+            return _prop_ge(npc_props, left, float(right))
+        if '==' in predicate:
+            left, right = [s.strip() for s in predicate.split('==', 1)]
+            return _prop_eq(npc_props, left, right.strip('"\''))
+        if '!=' in predicate:
+            left, right = [s.strip() for s in predicate.split('!=', 1)]
+            return not _prop_eq(npc_props, left, right.strip('"\''))
+    except Exception:
+        return False
+    return False
+
 
 
 def _check_promise_precondition(promise_spec: str, expected: bool, state: StoryState) -> bool:
@@ -202,7 +252,7 @@ def _apply_numeric_change(current: float, delta_expr: str) -> float:
         return current
 
 
-def apply_effects(beat: Dict[str, Any], state: StoryState, npc_list: List[str]) -> None:
+def apply_effects(beat: Dict[str, Any], state: StoryState, npc_list: List[str], player_id: Optional[str] = None) -> None:
     effects: Dict[str, Any] = beat.get("effects", {}) or {}
 
     # Tension adjustments
@@ -213,11 +263,33 @@ def apply_effects(beat: Dict[str, Any], state: StoryState, npc_list: List[str]) 
     set_flag = effects.get("set_flag")
     if isinstance(set_flag, dict):
         state.flags.update(set_flag)
+        # Emit flag_set toast for each flag
+        for key, value in set_flag.items():
+            if WEBSOCKET_AVAILABLE:
+                asyncio.create_task(websocket_manager.emit_consequence_toast(
+                    kind="flag_set",
+                    label=f"Flag set: {key}",
+                    player_id=player_id
+                ))
+                log_toast_emitted(state.scene_index, "flag_set", f"Flag set: {key}")
 
     # Per-NPC adjustments
     for npc_id in npc_list:
         if "trust[npc]" in effects and isinstance(effects["trust[npc]"], str):
-            state.apply_trust_delta(npc_id, float(effects["trust[npc]"]))
+            delta = float(effects["trust[npc]"])
+            state.apply_trust_delta(npc_id, delta)
+            # Emit reputation_shift toast
+            if WEBSOCKET_AVAILABLE:
+                npc_name = state.npcs.get(npc_id, {}).get("full_name", "Unknown")
+                direction = "↑" if delta > 0 else "↓"
+                asyncio.create_task(websocket_manager.emit_consequence_toast(
+                    kind="reputation_shift",
+                    label=f"{npc_name} trust {direction}",
+                    player_id=player_id,
+                    delta=delta,
+                    npc_id=npc_id
+                ))
+                log_toast_emitted(state.scene_index, "reputation_shift", f"{npc_name} trust {direction}", npc_id, delta)
 
         if "arc_transition[npc]" in effects:
             new_arc = str(effects["arc_transition[npc]"])
@@ -229,11 +301,27 @@ def apply_effects(beat: Dict[str, Any], state: StoryState, npc_list: List[str]) 
     if isinstance(set_world_flag, dict):
         for key, value in set_world_flag.items():
             state.set_world_flag(key, value)
+            # Emit flag_set toast
+            if WEBSOCKET_AVAILABLE:
+                asyncio.create_task(websocket_manager.emit_consequence_toast(
+                    kind="flag_set",
+                    label=f"World flag set: {key}",
+                    player_id=player_id
+                ))
+                log_toast_emitted(state.scene_index, "flag_set", f"World flag set: {key}")
     
     clear_world_flag = effects.get("clear_world_flag")
     if isinstance(clear_world_flag, list):
         for key in clear_world_flag:
             state.clear_world_flag(key)
+            # Emit flag_cleared toast
+            if WEBSOCKET_AVAILABLE:
+                asyncio.create_task(websocket_manager.emit_consequence_toast(
+                    kind="flag_cleared",
+                    label=f"World flag cleared: {key}",
+                    player_id=player_id
+                ))
+                log_toast_emitted(state.scene_index, "flag_cleared", f"World flag cleared: {key}")
     
     # Promises
     add_promise = effects.get("add_promise")
@@ -244,24 +332,73 @@ def apply_effects(beat: Dict[str, Any], state: StoryState, npc_list: List[str]) 
             npc_id=add_promise.get("npc_id"),
             due_by_scene=add_promise.get("due_by_scene")
         )
+        # Emit promise_set toast
+        if WEBSOCKET_AVAILABLE:
+            npc_id = add_promise.get("npc_id")
+            npc_name = state.npcs.get(npc_id, {}).get("full_name", "Unknown") if npc_id else "Unknown"
+            asyncio.create_task(websocket_manager.emit_consequence_toast(
+                kind="promise_set",
+                label=f"Promise made to {npc_name}",
+                player_id=player_id,
+                npc_id=npc_id
+            ))
+            log_toast_emitted(state.scene_index, "promise_set", f"Promise made to {npc_name}", npc_id)
     
     fulfill_promise = effects.get("fulfill_promise")
     if isinstance(fulfill_promise, str):
         state.fulfill_promise(fulfill_promise)
+        # Emit promise_fulfilled toast
+        if WEBSOCKET_AVAILABLE:
+            asyncio.create_task(websocket_manager.emit_consequence_toast(
+                kind="promise_fulfilled",
+                label="Promise fulfilled",
+                player_id=player_id
+            ))
+            log_toast_emitted(state.scene_index, "promise_fulfilled", "Promise fulfilled")
     
     breach_promise = effects.get("breach_promise")
     if isinstance(breach_promise, str):
         state.breach_promise(breach_promise)
+        # Emit promise_breached toast
+        if WEBSOCKET_AVAILABLE:
+            asyncio.create_task(websocket_manager.emit_consequence_toast(
+                kind="promise_breached",
+                label="Promise breached",
+                player_id=player_id
+            ))
+            log_toast_emitted(state.scene_index, "promise_breached", "Promise breached")
     
     # Reputation
     reputation_delta = effects.get("reputation_delta")
     if isinstance(reputation_delta, dict):
         state.apply_reputation_delta(reputation_delta)
+        # Emit reputation_shift toast for each trait
+        for trait, delta in reputation_delta.items():
+            if WEBSOCKET_AVAILABLE:
+                direction = "↑" if delta > 0 else "↓"
+                asyncio.create_task(websocket_manager.emit_consequence_toast(
+                    kind="reputation_shift",
+                    label=f"{trait} reputation {direction}",
+                    player_id=player_id,
+                    delta=delta
+                ))
+                log_toast_emitted(state.scene_index, "reputation_shift", f"{trait} reputation {direction}", delta=delta)
     
     # Resources
     resource_delta = effects.get("resource_delta")
     if isinstance(resource_delta, dict):
         state.apply_resource_delta(resource_delta)
+        # Emit resource_change toast for each resource
+        for resource, delta in resource_delta.items():
+            if WEBSOCKET_AVAILABLE:
+                direction = "↑" if delta > 0 else "↓"
+                asyncio.create_task(websocket_manager.emit_consequence_toast(
+                    kind="resource_change",
+                    label=f"{resource} {direction}",
+                    player_id=player_id,
+                    delta=delta
+                ))
+                log_toast_emitted(state.scene_index, "resource_change", f"{resource} {direction}", delta=delta)
 
 
 def promise_window(scene: int, due_by: Optional[int]) -> bool:
