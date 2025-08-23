@@ -5,7 +5,7 @@ import random
 from typing import Any, Dict, List, Tuple
 
 from .state import StoryState
-from .beat_dsl import evaluate_preconditions
+from .beat_dsl import evaluate_preconditions, promise_window
 
 
 def _theme_alignment_score(beat: Dict[str, Any], state: StoryState) -> float:
@@ -78,6 +78,56 @@ def _player_synergy(beat: Dict[str, Any], state: StoryState) -> float:
     return 1.0 if any(tag in matches for tag in tags) else 0.5
 
 
+def _flag_consumption_bonus(beat: Dict[str, Any], state: StoryState) -> float:
+    """Reward beats that consume/clear world flags."""
+    effects = beat.get("effects", {}) or {}
+    clear_flags = effects.get("clear_world_flag", [])
+    
+    if not clear_flags:
+        return 0.0
+    
+    # Count how many flags this beat would clear
+    cleared_count = 0
+    for flag_key in clear_flags:
+        if flag_key in state.world_flags:
+            cleared_count += 1
+    
+    # Bonus proportional to number of flags cleared (diminishing returns)
+    if cleared_count == 0:
+        return 0.0
+    elif cleared_count == 1:
+        return 0.15
+    elif cleared_count == 2:
+        return 0.25
+    else:
+        return 0.30  # Cap at 3+ flags
+
+
+def _promise_window_bonus(beat: Dict[str, Any], state: StoryState) -> float:
+    """Reward beats that fulfill promises within their window."""
+    effects = beat.get("effects", {}) or {}
+    fulfill_promise = effects.get("fulfill_promise")
+    
+    if not fulfill_promise:
+        return 0.0
+    
+    # Find the promise being fulfilled
+    target_promise = None
+    for promise in state.promises:
+        if promise.id == fulfill_promise:
+            target_promise = promise
+            break
+    
+    if not target_promise or target_promise.fulfilled or target_promise.breached:
+        return 0.0
+    
+    # Check if within window
+    if promise_window(state.scene_index, target_promise.due_by_scene):
+        return 0.20  # Bonus for fulfilling within window
+    else:
+        return 0.05  # Small bonus for fulfilling late (better than never)
+
+
 def score_beat(beat: Dict[str, Any], state: StoryState, npc_candidates: List[str]) -> float:
     cfg = state.flags.get("config") or {}
     weights = cfg.get("weights") or {}
@@ -89,6 +139,11 @@ def score_beat(beat: Dict[str, Any], state: StoryState, npc_candidates: List[str
     score += float(weights.get("diversity_penalty", -0.15)) * (1.0 + _diversity_penalty(beat, state))
     score += float(weights.get("world_hook_match", 0.10)) * _world_hook_match(beat, state)
     score += float(weights.get("player_synergy", 0.15)) * _player_synergy(beat, state)
+    
+    # Consequence Fabric scoring
+    score += float(weights.get("flag_consumption", 0.10)) * _flag_consumption_bonus(beat, state)
+    score += float(weights.get("promise_window", 0.10)) * _promise_window_bonus(beat, state)
+    
     return score
 
 

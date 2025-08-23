@@ -24,7 +24,7 @@ import hashlib
 import json
 import re
 import sys
-from typing import Any, Union, Dict, Optional, cast
+from typing import Any, Union, Dict, Optional, cast, List
 
 # 4️⃣ Third-party libs
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
@@ -291,6 +291,32 @@ class NPCChatOut(BaseModel):
 
 NPCChatIn.model_rebuild()
 NPCChatOut.model_rebuild()
+
+
+# ─── Flow Summary Models ──────────────────────────────────────────────────────
+class ConsequenceChange(BaseModel):
+    type: str  # "flag", "promise", "reputation", "resource"
+    key: str
+    value: Any
+    npc_id: Optional[str] = None
+    delta: Optional[Any] = None
+
+class ChoiceRecord(BaseModel):
+    scene_index: int
+    text: str
+    tags: List[str] = Field(default_factory=list)
+    effects: Dict[str, Any] = Field(default_factory=dict)
+
+class FlowSummaryResponse(BaseModel):
+    scene_range: List[int]  # [start, end]
+    choices: List[ChoiceRecord]
+    consequences: List[ConsequenceChange]
+    fogged_branches: int
+    percent_stats: Dict[str, float] = Field(default_factory=dict)
+
+ConsequenceChange.model_rebuild()
+ChoiceRecord.model_rebuild()
+FlowSummaryResponse.model_rebuild()
 
 
 # ─────────────────────────────── NPC Chat API ────────────────────────────────
@@ -1920,10 +1946,105 @@ def api_validate(tree: dict) -> dict[str, list[str]]:
     issues = validate(tree)
     return {"issues": issues}
 
+@app.get("/flow/summary")
+def api_flow_summary(player_id: str, chapter: int = 1) -> FlowSummaryResponse:
+    """Get a spoiler-safe summary of choices and consequences for a chapter."""
+    try:
+        # Load player profile to get soulSeedId
+        profiles = _read_json(str(DATA_FILE), {})
+        profile = profiles.get(player_id)
+        if not profile:
+            raise HTTPException(404, "Player not found")
+        
+        soul_seed_id = profile.get("soulSeedId")
+        if not soul_seed_id:
+            raise HTTPException(404, "SoulSeedId not found for player")
+        
+        # Load story state
+        state = _read_json(str(STATE_FILE), {"stories": {}})
+        story_data = state["stories"].get(soul_seed_id)
+        if not story_data:
+            raise HTTPException(404, "No story in progress for this player")
+        
+        # Calculate scene range for this chapter (assuming ~10 scenes per chapter)
+        scenes_per_chapter = 10
+        start_scene = (chapter - 1) * scenes_per_chapter
+        end_scene = min(start_scene + scenes_per_chapter - 1, 29)  # Max 30 scenes
+        
+        # Extract choices from story history (this is a simplified version)
+        # In a real implementation, you'd track choices more granularly
+        choices = []
+        history = story_data.get("history", [])
+        
+        # For now, create placeholder choices based on scene indices
+        for scene_idx in range(start_scene, min(end_scene + 1, len(history))):
+            if scene_idx < len(history):
+                choices.append(ChoiceRecord(
+                    scene_index=scene_idx,
+                    text=f"Scene {scene_idx + 1}",
+                    tags=["placeholder"],
+                    effects={}
+                ))
+        
+        # Extract consequences from story state (simplified)
+        consequences = []
+        
+        # Add world flags as consequences
+        world_flags = story_data.get("world_flags", {})
+        for key, value in world_flags.items():
+            consequences.append(ConsequenceChange(
+                type="flag",
+                key=key,
+                value=value
+            ))
+        
+        # Add promises as consequences
+        promises = story_data.get("promises", [])
+        for promise in promises:
+            if promise.get("created_at_scene", 0) >= start_scene:
+                consequences.append(ConsequenceChange(
+                    type="promise",
+                    key=promise.get("id", ""),
+                    value=promise.get("description", ""),
+                    npc_id=promise.get("npc_id")
+                ))
+        
+        # Add reputation changes
+        reputation = story_data.get("reputation", {})
+        for trait, value in reputation.items():
+            consequences.append(ConsequenceChange(
+                type="reputation",
+                key=trait,
+                value=value
+            ))
+        
+        # Calculate fogged branches (simplified - in reality this would be more complex)
+        fogged_branches = max(0, (end_scene - start_scene + 1) * 2 - len(choices))
+        
+        # Calculate percent stats (placeholder)
+        percent_stats = {
+            "choice_popularity": 0.75  # Placeholder
+        }
+        
+        return FlowSummaryResponse(
+            scene_range=[start_scene, end_scene],
+            choices=choices,
+            consequences=consequences,
+            fogged_branches=fogged_branches,
+            percent_stats=percent_stats
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating flow summary: {e}")
+        raise HTTPException(500, "Failed to generate flow summary")
+
+
 @app.get("/ritual")
 def api_ritual_get():
     """Provide a lightweight hint for clients hitting GET /ritual.
-    Returns 200 with instructions instead of a 405 so dev tools don’t flag errors.
+    Returns 200 with instructions instead of a 405 so dev tools don't flag errors.
     """
     return {"message": "Use POST /ritual to perform the ritual."}
 
