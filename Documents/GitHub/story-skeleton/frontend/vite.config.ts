@@ -71,6 +71,10 @@ export default defineConfig(({ mode }) => {
           target: backend,
           changeOrigin: true,
         },
+        '/flow': {
+          target: backend,
+          changeOrigin: true,
+        },
       },
     },
   }

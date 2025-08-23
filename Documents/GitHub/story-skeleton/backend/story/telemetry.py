@@ -57,3 +57,16 @@ def log_free_text(
     }
     print(json.dumps({"telemetry": record}))
 
+
+def log_consequence_change(
+    scene_index: int,
+    changes: Dict[str, Any]
+) -> None:
+    """Log consequence fabric changes (flags, promises, reputation, resources)."""
+    record = {
+        "scene_index": scene_index,
+        "consequence_changes": changes,
+        "type": "consequence_change"
+    }
+    print(json.dumps({"telemetry": record}))
+

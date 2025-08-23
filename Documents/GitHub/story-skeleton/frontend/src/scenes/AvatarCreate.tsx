@@ -55,23 +55,21 @@ export default function AvatarCreate() {
     /* 2 ─ create soul-seed */
     let seed: SoulSeedRes
     try {
-      console.log('📤 POST /soulseed', {
-        playerName:       name.trim(),
-        archetypePreset:  preset,
-        archetypeCustom:  custom.trim() || null,
+      const payload = {
+        playerName       : name.trim(),
+        archetypePreset  : preset,
+        archetypeCustom  : custom.trim() || null,
         avatarReferenceUrl: null,
-      })
-      const { data } = await axios.post<SoulSeedRes>(
-        '/soulseed',
-        {
-          playerName       : name.trim(),
-          archetypePreset  : preset,
-          archetypeCustom  : custom.trim() || null,
-          avatarReferenceUrl: null,
-        }
-      )
-      seed = data
-      console.log('✅ soul-seed response:', data)
+      }
+      console.log('📤 POST /soulseed', payload)
+      console.log('📤 axios baseURL:', axios.defaults.baseURL)
+      
+      const response = await axios.post<SoulSeedRes>('/soulseed', payload)
+      console.log('📤 axios response status:', response.status)
+      console.log('📤 axios response headers:', response.headers)
+      
+      seed = response.data
+      console.log('✅ soul-seed response:', seed)
 
       // —– persist into localStorage (so SceneView can read them) —–
       localStorage.setItem('playerId',     seed.playerId)
@@ -83,7 +81,24 @@ export default function AvatarCreate() {
       console.log('▶ hasSeed in context now:', hasSeed)
     } catch (err) {
       console.error('❌ soul-seed creation failed:', err)
-      setErr('Failed to create profile, please retry.')
+      console.error('❌ Error details:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        config: err.config
+      })
+      
+      let errorMessage = 'Failed to create profile, please retry.'
+      if (err.response?.status === 422) {
+        errorMessage = 'Invalid profile data. Please check your input.'
+      } else if (err.response?.status >= 500) {
+        errorMessage = 'Server error. Please try again later.'
+      } else if (err.code === 'NETWORK_ERROR') {
+        errorMessage = 'Network error. Please check your connection.'
+      }
+      
+      setErr(errorMessage)
       setBusy(false)
       return
     }
@@ -177,6 +192,25 @@ export default function AvatarCreate() {
         </div>
 
         {err && <p className="text-red-600">{err}</p>}
+
+        {/* Debug button */}
+        <button
+          type="button"
+          onClick={async () => {
+            console.log('🔍 Testing API connection...')
+            try {
+              const response = await axios.get('/health')
+              console.log('✅ Health check successful:', response.data)
+              alert('API connection working! Check console for details.')
+            } catch (error) {
+              console.error('❌ Health check failed:', error)
+              alert('API connection failed! Check console for details.')
+            }
+          }}
+          className="w-full py-2 bg-green-600 text-white rounded shadow mb-2"
+        >
+          Test API Connection
+        </button>
 
         <button
           disabled={busy}

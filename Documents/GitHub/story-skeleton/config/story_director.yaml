@@ -1,0 +1,67 @@
+# Scoring weights
+weights:
+  theme_alignment: 0.25
+  arc_progress: 0.20
+  tension_fit: 0.20
+  diversity_penalty: -0.15   # negative = penalize repeats
+  world_hook_match: 0.10
+  player_synergy: 0.15
+  flag_consumption: 0.10     # reward beats that clear world flags
+  promise_window: 0.10       # reward beats that fulfill promises within window
+  epsilon: 0.02              # small randomness for variety
+
+# Recruitment thresholds
+recruitment:
+  trust_threshold: 0.60
+  min_interactions: 3
+  cooldown_scenes: 2
+  party_capacity: 3
+
+# Tension target curve (30 values, 0..1)
+# Rough shape: rise → crest → drop
+# You may compute dynamically; these are defaults.
+tension_curve: [
+  0.20, 0.22, 0.24, 0.27, 0.30, 0.34, 0.38,
+  0.42, 0.46, 0.50, 0.54, 0.58, 0.62, 0.66, 0.70,
+  0.74, 0.78, 0.82, 0.86, 0.88, 0.90,
+  0.82, 0.74, 0.66, 0.58, 0.50, 0.42, 0.36, 0.30, 0.24
+]
+
+# Role spotlight balance (max appearances before penalty grows)
+role_soft_caps:
+  Mentor: 5
+  Rival: 5
+  Healer: 6
+  Guardian: 6
+  Trickster: 5
+  Wild-card: 5
+  any: 12
+
+# RNG seed
+rng:
+  source: story_seed
+
+# Preconditions/Efffects DSL options for parser
+# (Documented for implementers)
+preconditions_dsl:
+  comparisons: ["<=", ">=", "in[]", "in{}", "=="]
+  special_keys:
+    - tension
+    - phase            # early|mid|late (derived from curve)
+    - interactions[npc]
+    - trust[npc]
+    - arc_state[npc]
+    - cooldown_ok[npc]
+    - party_not_full
+    - scene_mood
+    # Consequence Fabric additions
+    - world_flags[flag_key]
+    - promises.contains(promise_id|npc_id)
+    - reputation.trait_name
+    - resources.resource_name
+
+# Diversity window for penalty (avoid repeating same tag too often)
+diversity:
+  window: 4
+  penalty_per_repeat: 0.07
+

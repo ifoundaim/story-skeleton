@@ -42,6 +42,67 @@ def _compare_numeric(lhs: float, op_value: str) -> bool:
         return False
 
 
+def _check_world_flag_precondition(key: str, expected: Any, state: StoryState) -> bool:
+    """Check if a world flag meets the precondition."""
+    current_value = state.world_flags.get(key)
+    
+    if isinstance(expected, str):
+        # String comparison
+        if expected.startswith("in{"):
+            options = _parse_set(expected)
+            return options is not None and str(current_value) in options
+        elif expected.startswith("in["):
+            rng = _parse_range(expected)
+            if rng is not None and isinstance(current_value, (int, float)):
+                return rng[0] <= float(current_value) <= rng[1]
+        else:
+            # Check if it's a numeric comparison like ">=3"
+            if isinstance(current_value, (int, float)):
+                return _compare_numeric(float(current_value), expected)
+            # Direct equality for strings
+            return str(current_value) == expected
+    elif isinstance(expected, bool):
+        return current_value == expected
+    elif isinstance(expected, (int, float)):
+        return current_value == expected
+    
+    return False
+
+
+def _check_promise_precondition(promise_spec: str, expected: bool, state: StoryState) -> bool:
+    """Check promise-related preconditions."""
+    if promise_spec.startswith("contains(") and promise_spec.endswith(")"):
+        # format: contains(promise_id) or contains(npc_id)
+        target = promise_spec[9:-1]  # Remove "contains(" and ")"
+        
+        # Check if it's a promise ID or NPC ID
+        for promise in state.promises:
+            if promise.id == target or promise.npc_id == target:
+                if not promise.fulfilled and not promise.breached:
+                    return expected
+        return not expected  # Promise not found or already resolved
+    
+    return False
+
+
+def _check_reputation_precondition(trait: str, threshold: str, state: StoryState) -> bool:
+    """Check reputation trait against threshold."""
+    if not hasattr(state.reputation, trait):
+        return False
+    
+    current_value = getattr(state.reputation, trait)
+    return _compare_numeric(current_value, threshold)
+
+
+def _check_resource_precondition(resource: str, threshold: str, state: StoryState) -> bool:
+    """Check resource value against threshold."""
+    if not hasattr(state.resources, resource):
+        return False
+    
+    current_value = getattr(state.resources, resource)
+    return _compare_numeric(float(current_value), threshold)
+
+
 def evaluate_preconditions(beat: Dict[str, Any], state: StoryState, npc: Optional[str] = None) -> bool:
     conds: Dict[str, Any] = beat.get("preconditions", {}) or {}
 
@@ -103,6 +164,26 @@ def evaluate_preconditions(beat: Dict[str, Any], state: StoryState, npc: Optiona
             cooldown = int(cooldown_cfg.get("cooldown_scenes", 2))
             if (state.scene_index - int(last_invite)) < cooldown:
                 return False
+        # Consequence Fabric preconditions
+        elif key.startswith("world_flags["):
+            # format: world_flags[flag_key]
+            flag_key = key[12:-1]  # Remove "world_flags[" and "]"
+            if not _check_world_flag_precondition(flag_key, expected, state):
+                return False
+        elif key.startswith("promises."):
+            # format: promises.contains(promise_id) or promises.contains(npc_id)
+            if not _check_promise_precondition(key[9:], expected, state):
+                return False
+        elif key.startswith("reputation."):
+            # format: reputation.trait_name
+            trait = key[11:]  # Remove "reputation."
+            if not _check_reputation_precondition(trait, str(expected), state):
+                return False
+        elif key.startswith("resources."):
+            # format: resources.resource_name
+            resource = key[10:]  # Remove "resources."
+            if not _check_resource_precondition(resource, str(expected), state):
+                return False
         else:
             # Unknown key, ignore for now (treat as pass)
             continue
@@ -141,4 +222,51 @@ def apply_effects(beat: Dict[str, Any], state: StoryState, npc_list: List[str]) 
         if "arc_transition[npc]" in effects:
             new_arc = str(effects["arc_transition[npc]"])
             state.set_arc(npc_id, new_arc)
+
+    # Consequence Fabric effects
+    # World flags
+    set_world_flag = effects.get("set_world_flag")
+    if isinstance(set_world_flag, dict):
+        for key, value in set_world_flag.items():
+            state.set_world_flag(key, value)
+    
+    clear_world_flag = effects.get("clear_world_flag")
+    if isinstance(clear_world_flag, list):
+        for key in clear_world_flag:
+            state.clear_world_flag(key)
+    
+    # Promises
+    add_promise = effects.get("add_promise")
+    if isinstance(add_promise, dict):
+        state.add_promise(
+            promise_id=add_promise["id"],
+            description=add_promise["description"],
+            npc_id=add_promise.get("npc_id"),
+            due_by_scene=add_promise.get("due_by_scene")
+        )
+    
+    fulfill_promise = effects.get("fulfill_promise")
+    if isinstance(fulfill_promise, str):
+        state.fulfill_promise(fulfill_promise)
+    
+    breach_promise = effects.get("breach_promise")
+    if isinstance(breach_promise, str):
+        state.breach_promise(breach_promise)
+    
+    # Reputation
+    reputation_delta = effects.get("reputation_delta")
+    if isinstance(reputation_delta, dict):
+        state.apply_reputation_delta(reputation_delta)
+    
+    # Resources
+    resource_delta = effects.get("resource_delta")
+    if isinstance(resource_delta, dict):
+        state.apply_resource_delta(resource_delta)
+
+
+def promise_window(scene: int, due_by: Optional[int]) -> bool:
+    """Helper function to check if a promise is within its window."""
+    if due_by is None:
+        return True  # No deadline, always in window
+    return scene <= due_by
 
