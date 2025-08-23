@@ -1,0 +1,724 @@
+# PurposePath Story Engine
+
+> **Awaken human potential through generative mythic storytelling.**
+
+## 🎯 Recent Sprint Completions
+
+### ✅ Automatic NPC Recruitment System (SPR-NPC05) - COMPLETED
+**Dynamic NPC Recruitment Choice Injection**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Automatic recruitment choice injection based on trust, timing, and narrative context
+  - RecruitmentEvaluator with hard checks (trust ≥0.60, scene ≥16, not companion, cooldown)
+  - Soft checks for victory scenes and emotional alignment
+  - LLM prompt integration for generating in-character recruitment dialogue
+  - Enhanced onboarding flow with telemetry logging
+  - Cooldown system preventing duplicate invitations within 2 scenes
+  - Comprehensive test suite covering all recruitment scenarios
+
+**Technical Implementation:**
+- **Recruitment Evaluator:** `backend/story_recruitment.py` - Core evaluation logic
+- **Story Integration:** `purpose_agents/generate_story.py` - Automatic choice injection
+- **Onboarding Service:** `backend/npc/service.py` - Enhanced `onboard_npc()` function
+- **Backend Integration:** `backend/main.py` - Extended `_choose_py()` with recruitment handling
+- **Testing:** `backend/tests/test_recruitment_evaluator.py` - Evaluation logic tests
+- **Choice Injection:** `backend/tests/test_auto_choice_injection.py` - Integration tests
+- **Onboard Flow:** `backend/tests/test_onboard_flow.py` - Onboarding process tests
+
+**Recruitment System Features:**
+- **Automatic Evaluation:** NPCs evaluated for recruitment based on multiple criteria
+- **Trust Threshold:** Minimum 0.60 trust required for recruitment offers
+- **Timing Control:** Recruitment only available in Act III or later (scene ≥16)
+- **Cooldown System:** 2-scene minimum between recruitment offers per NPC
+- **Narrative Context:** Victory scenes and emotional alignment provide bonus context
+- **In-Character Dialogue:** LLM-generated recruitment lines based on trust level
+- **Telemetry Logging:** Comprehensive tracking of recruitment events and outcomes
+
+**Hard Requirements:**
+- **Trust Level:** NPC trust must be ≥0.60
+- **Story Timing:** Scene index must be ≥16 (Act III or later)
+- **Companion Status:** NPC must not already be a companion
+- **Cooldown Period:** ≥2 scenes since last recruitment offer
+
+**Soft Requirements (Bonus Context):**
+- **Victory Scenes:** Recent shared victories increase recruitment likelihood
+- **Emotional Alignment:** Player emotion matching NPC compatible emotions
+- **Narrative Purpose:** Scene context influences recruitment dialogue
+
+**Choice Structure:**
+```json
+{
+  "text": "Ask Test NPC to join your quest as a trusted companion",
+  "npc_onboard": "npc-uuid-here",
+  "conditions": {
+    "trust_above": 0.60,
+    "not_companion": true
+  },
+  "recruit_line": "'PlayerName, I've seen your courage and wisdom. I would be honored to fight alongside you.'",
+  "npc_trust_deltas": {
+    "npc-uuid-here": 0.05
+  }
+}
+```
+
+**Acceptance Criteria Met:**
+- ✅ Qualifying scenes display Invite NPC choice exactly once per NPC
+- ✅ Player acceptance adds NPC to party and emits recruit dialogue
+- ✅ Cooldown prevents duplicate invitations within 2 scenes
+- ✅ All unit tests pass with comprehensive coverage
+- ✅ Telemetry logging tracks recruitment events and outcomes
+
+> Note: Ongoing debugging for early-scene NPC visibility. In Act I scenes, the UI will now show “None” in the “NPCs in Scene” panel until a character has a resolved, non-UUID name from narrative introduction. Name binding occurs once the story text introduces a proper noun, after which the sidebar and chat reflect the name.
+
+---
+
+### ✅ NPC & Trust System Sprint (SPR-NPC01) - COMPLETED
+**Non-Player Characters with Persistent Trust Values**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - New `npc` table with `id`, `full_name`, `baseline_trust`, `trust` fields
+  - Idempotent NPC profile creation with `ensure_npc_profile()` function
+  - Trust value management with `apply_trust()` function and 0.0-1.0 clamping
+  - RESTful API endpoints for NPC profile and trust management
+  - Backward compatibility with existing `npc_state` table
+  - Comprehensive test suite for all new functionality
+  - Alembic migration for database schema updates
+
+**Technical Implementation:**
+- **Database Migration:** `backend/migrations/versions/npc02_create_npc_table.py` - New NPC table schema
+- **Data Models:** `backend/npc/models.py` - NPC model with baseline_trust and trust fields
+- **Service Layer:** `backend/npc/service.py` - `ensure_npc_profile()` and `apply_trust_new()` functions
+- **API Router:** `backend/npc/router.py` - New endpoints for NPC profile management
+- **Profile Seeding:** `backend/npc/profile_seed.py` - Idempotent NPC creation utilities
+- **Testing:** `backend/tests/test_npc_sprint01.py` - Comprehensive test suite
+- **API Testing:** `backend/tests/test_npc_api_sprint01.py` - API endpoint validation
+
+**NPC System Features:**
+- **Persistent Profiles:** Each NPC has unique ID, full name, and baseline trust value
+- **Trust Evolution:** Trust values (0.0-1.0) change based on player choices and interactions
+- **Idempotent Creation:** `ensure_npc_profile()` creates NPCs safely without duplicates
+- **Trust Management:** `apply_trust()` increments/decrements trust with automatic clamping
+- **API Integration:** RESTful endpoints for creating, reading, and updating NPC profiles
+- **Backward Compatibility:** Existing `npc_state` table continues to function
+
+**API Endpoints:**
+- `POST /npc/profile` - Create idempotent NPC profile
+- `GET /npc/profile/{npc_id}` - Retrieve NPC profile
+- `POST /npc/profile/{npc_id}/trust` - Update NPC trust value
+- `GET /npc/profiles` - List all NPC profiles
+
+**Trust System:**
+- **Baseline Trust:** Initial trust value set when NPC is created
+- **Current Trust:** Dynamic trust value that changes based on player interactions
+- **Trust Clamping:** Values automatically constrained to 0.0-1.0 range
+- **Delta Application:** Trust changes applied as positive/negative deltas
+- **Persistence:** Trust changes persist across scenes and sessions
+
+**Acceptance Criteria Met:**
+- ✅ Alembic migration adds `npc` table with required fields
+- ✅ `ensure_npc_profile()` creates idempotent NPC entries
+- ✅ `apply_trust()` increments/decrements NPC trust based on choices
+- ✅ Trust values persist across scenes and sessions
+- ✅ Comprehensive test coverage for all functionality
+- ✅ Backward compatibility with existing NPC system
+
+---
+
+### ✅ System Bootstrap Sprint (SPR-BOOT01) - COMPLETED
+**Docker Compose Stack, pgvector Extension, Health Check System**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** August 2025
+- **Key Features:**
+  - Docker Compose stack with API, database, frontend, and minio services
+  - pgvector extension enabled in PostgreSQL for vector operations
+  - Health check endpoint and script for system monitoring
+  - Pydantic BaseSettings for proper .env configuration management
+  - CI integration with GitHub Actions health check workflow
+  - Comprehensive local development setup documentation
+
+**Technical Implementation:**
+- **Docker Compose:** `docker-compose.yml` - Complete service stack with health checks
+- **Settings Management:** `backend/settings.py` - Pydantic BaseSettings for environment variables
+- **Health Check:** `scripts/healthcheck.sh` - Automated health verification script
+- **API Endpoint:** `backend/main.py` - `/health` endpoint with system status
+- **CI Integration:** `.github/workflows/health-check.yml` - Automated health check workflow
+- **Database:** PostgreSQL with pgvector extension for vector operations
+- **Environment:** `.env.sample` - Template for required environment variables
+
+**System Features:**
+- **Service Health:** Real-time health monitoring with retry logic
+- **Vector Support:** pgvector extension for 64-dimensional soulmap vectors
+- **Configuration:** Centralized settings management with environment variable support
+- **Development:** Local development environment with hot reloading
+- **CI/CD:** Automated health checks on pull requests and deployments
+
+**Acceptance Criteria Met:**
+- ✅ `docker-compose up` boots API + DB successfully
+- ✅ `GET /health` returns HTTP 200 with system status
+- ✅ pgvector extension exists and functions correctly
+- ✅ CI job passes with automated health verification
+
+---
+
+### ✅ Story Tree Validator & Auto-Healing System (SPR-VALID01) - COMPLETED
+**Automated Story Tree Validation & Auto-Healing System**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Automated story tree validation with comprehensive issue detection
+  - Auto-healing system that fixes common story tree problems
+  - Integration into story generation pipeline with logging
+  - Development-only validation endpoint for testing
+  - Comprehensive unit tests for validation and healing logic
+  - CI integration with GitHub Actions validation workflow
+
+**Technical Implementation:**
+- **Core Validator:** `codex/validate/story_validator.py` - `validate()` and `auto_heal()` functions
+- **Generator Integration:** `purpose_agents/generate_story.py` - Validation hook after story generation
+- **API Endpoint:** `backend/main.py` - `/validate` endpoint for development testing
+- **Testing:** `backend/tests/test_story_validation.py` - Comprehensive test suite
+- **CI Integration:** `.github/workflows/validate-story.yml` - GitHub Actions validation workflow
+- **Module Structure:** `codex/validate/__init__.py` - Clean module exports
+
+**Validation Features:**
+- **Issue Detection:** Duplicate tags, missing text/choices, undefined targets, orphaned scenes
+- **Auto-Healing:** Placeholder text insertion, missing node creation, choice relinking
+- **Aggressive Pruning:** Optional removal of unreachable nodes
+- **Performance:** Sub-100ms runtime on typical 200-node trees
+- **Safety:** Only heals at generation time, never mutates in-play trees
+- **Logging:** Comprehensive warning and error logging for debugging
+
+**Validation Checks:**
+- **Structural Integrity:** Missing intro_001, duplicate tags, invalid node structures
+- **Content Completeness:** Missing text, placeholder text detection
+- **Choice Validity:** Missing choice text, undefined next targets
+- **Reachability:** Orphaned scenes not reachable from intro_001
+- **Data Consistency:** Required fields presence and type validation
+
+---
+
+### ✅ Soul Map v2 Sprint (SM02) - COMPLETED
+**Unify on 64-Dimensional Vector System**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Canonical 64-trait enum with organized trait categories
+  - Unified 64-dimensional vector system replacing fragmented approaches
+  - Database model with pgvector integration and proper indexing
+  - Service layer with CRUD operations and delta clipping
+  - FastAPI router with RESTful endpoints
+  - Main app integration and story engine updates
+  - Comprehensive test suite with numpy float precision handling
+  - Legacy high-level soulmap service deprecation
+
+**Technical Implementation:**
+- **Core Mapping:** `backend/soulmap/mapping.py` - 64-trait enum and vector utilities
+- **Database Model:** `backend/soulmap/db.py` - SoulMap model with pgvector column
+- **Service Layer:** `backend/soulmap/service.py` - Business logic with delta clipping
+- **API Router:** `backend/soulmap/router.py` - REST endpoints for soulmap operations
+- **Main Integration:** `backend/main.py` - Soulmap delta processing in choice system
+- **Story Engine:** `story/engine.py` - Updated HTTP calls to new endpoints
+- **Migration:** `backend/migrations/versions/sm02_update_soulmap_table.py` - Database schema
+- **Testing:** `backend/tests/test_soulmap_v2.py` - Comprehensive integration tests
+- **Legacy Cleanup:** Removed `soulmap/main.py` and old utility files
+
+**64 Trait Categories:**
+- **Core Virtues** (0-7): COURAGE, COMPASSION, WISDOM, CREATIVITY, JUSTICE, TEMPERANCE, RESILIENCE, EMPATHY
+- **Shadow Traits** (8-15): FEAR, PRIDE, APATHY, SHADOW_BLEND_1-5
+- **Motivations** (16-23): SELFACTUALIZATION, EXTERNALVALIDATION, COLLECTIVE, MOTIVATION_BLEND_1-5
+- **Archetypes** (24-31): HERO, REBEL, SAGE, CAREGIVER, MAGICIAN, LOVER, SOVEREIGN, EXPLORER
+- **Archetype Blends** (32-39): ARCHETYPE_BLEND_1-8
+- **Cognitive Functions** (40-47): INTROVERTED/EXTRAVERTED variants of THINKING, FEELING, SENSING, INTUITING
+- **Attachment Styles** (48-51): SECURE, ANXIOUS, AVOIDANT, DISORGANIZED
+- **Psychological Needs** (52-59): AUTONOMY, COMPETENCE, RELATEDNESS, SELFCONTROL, MINDFULNESS, GRIT, CURIOSITY, PLAYFULNESS
+- **Social Traits** (60-63): OPTIMISM, VIGILANCE, SOCIALDOMINANCE, HUMILITY
+
+**API Endpoints:**
+- `GET /v1/soulmap/player/{player_id}` - Retrieve soulmap as trait dictionary
+- `PATCH /v1/soulmap/update` - Apply delta with `{player_id, delta:{trait:float}}`
+- `GET /v1/soulmap/health` - Health check endpoint
+
+---
+
+### ✅ NPC Profile Helper Sprint (NPC02) - COMPLETED
+**Backend Safeguard for NPC Profile Creation**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Automatic NPC profile creation for all NPCs referenced in scenes
+  - Support for both explicit `npc_profile` blocks and `npcs_present` fallback
+  - Integration in `/start` endpoint and `_choose_py` function
+  - Generator instruction for consistent NPC profile blocks
+  - Comprehensive unit tests for profile creation logic
+  - Idempotent operation (safe to call multiple times)
+
+**Technical Implementation:**
+- **Core Helper:** `backend/npc/profile_seed.py` - `ensure_npc_profile()` function
+- **Integration:** `backend/main.py` - Helper calls in story endpoints
+- **Generator Rules:** `purpose_agents/agent_backend.py` - NPC profile instruction
+- **Testing:** `backend/tests/test_profile_seed.py` - Comprehensive test suite
+- **Database:** Uses existing NPC service functions for profile creation
+- **Backward Compatibility:** Works with existing `npcs_present` arrays
+
+**Profile Helper Features:**
+- **Automatic Detection:** Scans scenes for NPC references in multiple formats
+- **Profile Creation:** Creates minimal NPC profiles with default values
+- **Metadata Support:** Handles recruitable flags and default trust values
+- **Error Handling:** Graceful handling of invalid data and database errors
+- **Generator Integration:** Ensures consistent NPC profile blocks in new stories
+
+---
+
+### ✅ Dynamic NPC Scene Integration (SPR-NPC08) - COMPLETED
+**Intelligent NPC Placement in Story Scenes**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Automatic integration of dynamically generated NPCs into story scenes
+  - Role-based placement (Mentors early, Rivals mid-story, etc.)
+  - Progressive introduction (NPCs appear gradually across acts)
+  - Narrative hook matching (NPCs placed in contextually appropriate scenes)
+  - Replacement of hardcoded NPC assignments with dynamic logic
+  - Full 8-scene story structure with proper NPC integration
+  - Fallback to hardcoded logic if dynamic integration fails
+
+**Technical Implementation:**
+- **Core Integration:** `backend/npc/scene_integration.py` - `NPCSceneIntegrator` class
+- **Story Generation:** `purpose_agents/generate_story.py` - Dynamic NPC assignment integration
+- **Scene Response:** `backend/main.py` - `_scene_to_response()` with dynamic NPC retrieval
+- **Assignment Logic:** Role-based, progressive introduction, and narrative hook matching
+- **Testing:** `backend/tests/test_npc_scene_integration.py` - Comprehensive test suite
+- **Documentation:** `docs/SPR-NPC08_SCENE_INTEGRATION.md` - Detailed integration guide
+
+**Scene Integration Features:**
+- **Dynamic Assignment:** `assign_npcs_to_scenes()` generates and assigns NPCs to scenes
+- **Role-Based Placement:** Mentors in Act I, Rivals in Act II, etc.
+- **Progressive Introduction:** NPCs introduced gradually across story acts
+- **Narrative Hook Matching:** NPCs placed in scenes matching their narrative hooks
+- **Scene Response Integration:** `get_scene_npcs()` retrieves dynamic NPCs for scenes
+- **Backward Compatibility:** Falls back to hardcoded logic if dynamic integration fails
+- **Full Story Structure:** Ensures complete 8-scene stories with proper NPC integration
+
+**API Integration:**
+- **Story Generation:** Dynamic NPC assignments applied during story creation
+- **Scene Response:** Dynamic NPC retrieval in `_scene_to_response()` function
+- **NPC Profiles:** Automatic NPC profile creation for dynamically assigned NPCs
+- **Trust Management:** Basic trust deltas applied for dynamic NPC interactions
+
+**Acceptance Criteria Met:**
+- ✅ Dynamically generated NPCs automatically appear in relevant scenes
+- ✅ NPC introductions align with narrative roles and progressive introduction rules
+- ✅ `npcs_present` data consistently populated with dynamic NPC assignments
+- ✅ All NPC IDs in scenes have corresponding NPC profiles
+- ✅ Full 8-scene story structure maintained with proper NPC integration
+- ✅ Fallback logic ensures system stability if dynamic integration fails
+
+---
+
+### ✅ Soulmap Integration Sprint (SM01) - COMPLETED
+**Player Choice Data Capture & Real-time Soulmap Updates**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Player choices now generate `soulmap_delta` values (64-element vectors)
+  - Real-time soulmap updates in database when choices are made
+  - Soulmap widget displays actual data instead of placeholder text
+  - Comprehensive debug logging for integration tracking
+  - Story generation includes soulmap delta fields for new stories
+
+**Technical Implementation:**
+- Backend: `backend/main.py` - `_choose_py` function with soulmap integration
+- Story Generation: `purpose_agents/generate_story.py` - Added soulmap_delta fields
+- Database: Soulmap vectors updated via PostgreSQL with pgvector
+- Frontend: SoulMapWidget now shows real-time soulmap data
+
+---
+
+### ✅ 30-Scene Four-Act Framework & Linear Fallback (SPR-ST02) - COMPLETED
+**Structured 30-Scene Narrative with Linear Fallback Mode**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** January 2025
+- **Key Features:**
+  - Replaced hardcoded 8-scene narrative with structured 30-scene four-act framework
+  - Act I (scenes 0-6): Setup and Introduction with key NPC introductions
+  - Act II (scenes 7-15): Rising Action and Development with relationship building
+  - Act III (scenes 16-23): Climax and Crisis with major confrontations
+  - Act IV (scenes 24-29): Resolution and Conclusion with satisfying endings
+  - Linear fallback mode for stable offline testing and UI validation
+  - Feature flag (`LLM_STORY_DISABLED`) for easy toggling between dynamic and fallback modes
+  - Full integration with NPCSceneIntegrator for progressive NPC placement
+  - Comprehensive unit tests for framework validation
+
+**Technical Implementation:**
+- **Constants:** `purpose_agents/constants.py` - 30-scene framework constants and utilities
+- **Story Generation:** `purpose_agents/generate_story.py` - Updated with 30-scene scaffold and fallback
+- **Linear Fallback:** `create_fallback_30_scene_story()` - Guaranteed linear progression for testing
+- **Feature Flag:** `LLM_STORY_DISABLED` environment variable for mode switching
+- **NPC Integration:** Full integration with `NPCSceneIntegrator` for dynamic NPC placement
+- **Testing:** `tests/test_30_scene_framework.py` - Comprehensive framework validation tests
+- **Documentation:** Updated README with framework explanation and usage guide
+
+**Framework Structure:**
+- **Total Scenes:** 30 scenes (tag_001 through tag_030)
+- **Act Distribution:** 7-9-8-6 scenes across four acts
+- **Choice Structure:** Linear progression (scene N → scene N+1) in fallback mode
+- **NPC Placement:** Progressive introduction aligned with act purposes
+- **Scene Metadata:** Each scene includes act, act_purpose, and scene_index fields
+
+**Act Purposes:**
+- **Act I (Setup):** Introduce protagonist, establish conflict, introduce key NPCs
+- **Act II (Development):** Deepen relationships, escalate conflicts, introduce complications
+- **Act III (Climax):** Present ultimate challenges, force critical decisions, reveal major twists
+- **Act IV (Resolution):** Resolve conflicts, show character growth, provide satisfying conclusions
+
+**Linear Fallback Features:**
+- **Guaranteed Structure:** Always generates exactly 30 scenes with proper act assignments
+- **Sequential Progression:** Every choice points to the next sequential scene
+- **Offline Testing:** Enables UI validation and testing without LLM dependencies
+- **Feature Flag Control:** `LLM_STORY_DISABLED=true` enables fallback mode
+- **NPC Integration:** Maintains NPC assignment structure for testing
+
+**Usage:**
+```bash
+# Enable linear fallback mode for testing
+export LLM_STORY_DISABLED=true
+
+# Run tests to validate framework
+python -m pytest tests/test_30_scene_framework.py -v
+
+# Generate story (will use fallback if flag is set)
+python -c "from purpose_agents.generate_story import create_fallback_30_scene_story; print(create_fallback_30_scene_story('fantasy', [0.1, 0.2, 0.3], 'TestPlayer'))"
+```
+
+**Acceptance Criteria Met:**
+- ✅ Successfully generates structured 30-scene arcs in both dynamic and fallback modes
+- ✅ All NPC integrations function as expected with progressive placement
+- ✅ Linear fallback mode reliably routes choices sequentially for offline/UI testing
+- ✅ Feature flag provides easy toggling between dynamic and fallback modes
+- ✅ All unit tests pass with comprehensive framework validation
+- ✅ Documentation clearly explains the new 30-scene narrative structure
+
+---
+
+### ✅ Memory Recap System Sprint (MEM01) - COMPLETED
+**Short-Term Memory Recap System for Codex**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - Enhanced memory recap builder in `codex/memory/recap_builder.py`
+  - Emotion vector trend analysis and inclusion in recaps
+  - NPC name extraction and interaction tracking
+  - Choice pattern detection and narrative integration
+  - Memory persistence with JSON storage and timestamp tracking
+  - API endpoint `/memory/{player_id}` for memory retrieval
+  - Frontend memory widget with "🧠 View Memory" button
+
+**Technical Implementation:**
+- **Core Module:** `codex/memory/recap_builder.py` - Enhanced narrative recap generation
+- **Memory Storage:** `codex/memory/memory_state.json` - Persistent memory with timestamps
+- **API Integration:** `backend/main.py` - Memory endpoint using enhanced codex memory system
+- **Frontend:** `frontend/src/scenes/SceneView.tsx` - Memory widget with toggle functionality
+- **Testing:** `tests/backend/test_memory.py` - Comprehensive test suite for memory functionality
+- **Agent Integration:** `codex/agents.py` - MEM01 agent for sprint tracking
+
+**Memory Features:**
+- **Narrative Generation:** Creates ~300-word 3rd-person narrative recaps
+- **Emotion Analysis:** Extracts and includes emotion trends from scene history
+- **NPC Tracking:** Identifies and mentions key NPC interactions
+- **Choice Patterns:** Detects and describes player choice approaches
+- **Word Limiting:** Intelligent truncation respecting sentence boundaries
+- **Persistence:** Automatic saving and retrieval of memory state
+
+---
+
+### ✅ Emotion Engine Sprint (EMO01) - COMPLETED
+**8-Dimensional Emotion Vector System & Real-time Tracking**
+- **Status:** ✅ **COMPLETED** 
+- **Date:** July 2025
+- **Key Features:**
+  - 8-dimensional emotion vector (joy, grief, awe, fear, desire, disgust, peace, rage)
+  - Real-time emotion updates based on player choices
+  - Emotion vector clamping and normalization
+  - Emotion state persistence with change logging
+  - Frontend radar chart visualization of emotional state
+  - Comprehensive emotion delta integration
+
+**Technical Implementation:**
+- **Core Models:** `EmotionState` with 8-dimensional vector and change log
+- **API Endpoints:** `GET /emotion/{player_id}` - Retrieve emotion state
+- **Integration:** Emotion deltas applied during story choices
+- **Frontend:** `EmotionGraph.tsx` with radar chart visualization
+- **Persistence:** JSON-based emotion state storage with change history
+- **Testing:** Test suite in `tests/backend/test_emotion.py`
+- **Agent Integration:** `codex/agents.py` - EMO01 agent for sprint tracking
+
+**Emotion System Features:**
+- **Multi-dimensional Tracking:** 8 distinct emotion dimensions
+- **Change History:** Log of emotion changes with scene context
+- **Visual Analytics:** Radar chart visualization of current emotional state
+- **Automatic Clamping:** Emotion values normalized to [-1.0, 1.0] range
+- **Choice Integration:** Emotion deltas applied based on story choices
+
+---
+
+## 📜 Project Overview
+
+A modular, AI‑driven narrative platform that synthesises avatars, stories, and soul‑mapping data in real‑time. Players cross the **ASK • SEEK • KNOCK** threshold, craft a personalised anime‑style hero, and experience an emergent saga shaped by every choice.
+
+---
+
+## 🗺️ High‑Level Architecture
+
+```
+┌────────────────────────────────┐
+│  Liminal Ritual  (SPR‑TR01)   │
+│  intentVector seed            │
+└────────────┬───────────────────┘
+             │
+┌────────────▼──────────────┐    ┌───────────────────────────┐
+│  Avatar Creator (SPR‑AV01)│───►│  AvatarSeed & Assets      │
+└────────────┬──────────────┘    └───────────────────────────┘
+             │
+┌────────────▼──────────────┐
+│   Soul Map API (SPR‑SM01) │◄─── Player choices + intent
+└────────────┬──────────────┘
+             │
+┌────────────▼──────────────┐
+│ Story Engine (SPR‑ST01)   │→ Scenes, Checkpoints
+└────────────┬──────────────┘
+             │
+┌────────────▼──────────────┐
+│ Narrative Media (SPR‑MEDIA01) │→ Images, Audio, S3
+└────────────┬──────────────┘
+             │
+┌────────────▼──────────────┐
+│ Codex Orchestrator (SPR‑CO01) │→ Task routing / validation
+└───────────────────────────┘
+```
+
+---
+
+## 🗂️ Repository Structure
+
+| Path        | Module              | Sprint | Notes                     |
+| ----------- | ------------------- | ------ | ------------------------- |
+| `/ritual/`  | Liminal sequence    | TR01   | Ritual UI + embeddings    |
+| `/avatar/`  | Avatar Creator      | AV01   | Three.js viewer, sliders  |
+| `/soulmap/` | Soul Map service    | SM01   | Trait API + visualizer    |
+| `/story/`   | Narrative engine    | ST01   | GPT‑4o scene pipeline     |
+| `/media/`   | Media generation    | MEDIA01| Images, audio, S3 storage |
+| `/codex/`   | Orchestration layer | CO01   | Agents, queue, validators |
+| `/codex/memory/` | Memory system    | MEM01  | Recap builder + persistence |
+| `/backend/npc/` | NPC Trust system  | NPC01  | Trust tracking + API      |
+| `/backend/npc/profile_seed.py` | NPC Profile Helper | NPC02  | Automatic profile creation |
+| `/backend/emotion/` | Emotion engine | EMO01  | 8D emotion vectors        |
+| `/docs/`    | Specs & diagrams    | —      | Markdown & images         |
+
+### Soul Map API
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/v1/soulmap/player/{player_id}` | Retrieve trait dictionary |
+| PATCH | `/v1/soulmap/update` | Apply delta with trait dictionary |
+| GET | `/v1/soulmap/health` | Health check endpoint |
+
+---
+
+## 🔗 Data Contract Quick‑Links
+
+* [`intentVector`](docs/contracts/intentVector_v1.md)
+* [`AvatarSeed`](docs/contracts/avatarSeed_v1.md)
+* [`SoulMapVector`](docs/contracts/soulMap_v1.md)
+* [`SceneMedia`](docs/contracts/sceneMedia_v1.md)
+
+Contracts are **versioned**; breaking changes require bumping `_vX` suffix and updating integration tests.
+
+---
+
+## 🛠️ Local Development
+
+### Quick Start
+1. `git clone …`
+2. `cp .env.sample .env` → fill DB & S3 creds.
+3. `docker-compose up` (spins Postgres, pgvector, minio, inference‑GPU stub).
+4. Run health check: `./scripts/healthcheck.sh`
+5. Visit `http://localhost:3000` for the React front‑end scaffold.
+
+### Health Check
+The system includes automated health checking:
+```bash
+# Manual health check
+./scripts/healthcheck.sh
+
+# Check pgvector extension
+docker-compose exec db psql -U postgres -d purposepath -c "SELECT vector_dims('[1,2,3]');"
+```
+
+### Environment Configuration
+The system uses Pydantic BaseSettings for configuration management:
+- **Settings File:** `backend/settings.py` - Centralized configuration
+- **Environment:** `.env` - Local environment variables (not committed)
+- **Template:** `.env.sample` - Template for required variables
+
+> **Note**: Without a GPU you can export `USE_CPU_STUBS=true` to run text‑only mocks.
+
+---
+
+## 🚀 Running Sprint Modules
+
+| Sprint | Start Script                | Primary Service                   |
+| ------ | --------------------------- | --------------------------------- |
+| TR01   | `pnpm dev --filter ritual`  | Ritual UI @ `localhost:3001`      |
+| AV01   | `pnpm dev --filter avatar`  | Avatar Creator @ `localhost:3002` |
+| SM01   | `pnpm dev --filter soulmap` | Soul Map API @ `localhost:8000`   |
+| SM02   | `python -m backend.main`    | Soul Map v2 API @ `localhost:8000`   |
+| ST01   | `pnpm dev --filter story`   | Story Engine @ `localhost:8001`   |
+| MEDIA01| `pnpm dev --filter media`   | Media Generator @ `localhost:8002`|
+| CO01   | `pnpm dev --filter codex`   | Orchestrator @ `localhost:9000`   |
+| MEM01  | `python run_codex.py`       | Memory System (integrated)        |
+| NPC01  | `python -m backend.main`    | NPC Trust API (integrated)        |
+| EMO01  | `python -m backend.main`    | Emotion Engine (integrated)       |
+
+Codex automatically stubs missing upstream APIs; once a sprint lands, flip the feature flag in `codex/config.yaml`.
+
+### CO01 Orchestrator Quickstart
+Run:
+```bash
+python run_codex.py
+```
+Visit `http://localhost:9000/tasks` for task status.
+
+
+---
+
+## 🧪 Tests & CI
+
+* **Unit tests**: `TESTING=1 pytest` (Backend) / `npm test` (Vitest)
+* **Contract tests**: `pnpm test:contracts` (runs JSON‑schema validation)
+* **End‑to‑end**: `pnpm test:e2e` (Playwright, mocked avatar render)
+* CI pipeline lives in `.github/workflows/ci.yml` and triggers on PRs to `main`.
+
+---
+
+## 🔄 Sprint Tracking
+
+* Kanban board: `docs/kanban.md` (auto‑generated)
+* Task list: `docs/sprint_tasks.md` (mirrors ChatGPT canvas)
+
+Update status by pushing commits with one of:
+
+```
+git commit -m "TR01-UI ✅ complete ritual interface"
+```
+
+Codex parses commit messages to move tasks between **To Do → In Progress → Done**.
+
+---
+
+## 🤝 Contributing Workflow
+
+1. Create branch: `git checkout -b sprint/<ID>-<your_task>`
+2. Code & commit following the task key.
+3. Open PR → auto‑tests run.
+4. Codex validator comments on schema / asset compliance.
+5. Merge after 1 approval + green CI.
+
+---
+
+## 📖 Glossary
+
+| Term             | Definition                                                              |
+| ---------------- | ----------------------------------------------------------------------- |
+| **intentVector** | 768‑dim embedding of player intent harvested during ASK • SEEK • KNOCK. |
+| **AvatarSeed**   | JSON descriptor of player avatar + asset hashes.                        |
+| **SoulMap**      | Multidimensional vector of evolving traits & archetypes.                |
+| **SceneMedia**   | Media assets (images, audio) associated with story scenes.              |
+
+---
+
+## Soul Map System v1 (SM01) ✅ **COMPLETED**
+
+### Backend
+- **Table:** `soul_map` (id UUID PK, player_id TEXT, vector pgvector(64), updated_at TIMESTAMP)
+- **API:**
+  - `GET /soulmap/{player_id}` → returns current vector (list[float]) or zero-vector
+  - `POST /soulmap/update` with `{player_id, delta: list[float]}` → adds delta, clips [-1,1], saves row
+- **Vector math:** See `backend/soulmap/vector_utils.py`
+- **Migration:**
+  - Run `alembic upgrade head` in `backend/` to create the table (requires pgvector extension)
+- **Player Choice Integration:**
+  - Story choices now include `soulmap_delta` fields (64-element float vectors)
+  - Automatic soulmap updates when players make choices via `_choose_py` function
+  - Real-time soulmap vector updates with clipping and vector math operations
+
+### Frontend
+- **SoulMapWidget:**
+  - Located in `frontend/src/scenes/SoulMapWidget.tsx`
+  - Fetches `/soulmap/{playerId}` and displays a radar chart of the first 8 vector traits using [recharts](https://recharts.org/)
+  - Mounted in the sidebar of `SceneView`
+  - **Now displays actual soulmap data** instead of "No soul map data yet"
+
+### Story Generation Integration
+- **Choice Deltas:** Story choices in `purpose_agents/generate_story.py` now include `soulmap_delta` values
+- **Real-time Updates:** Player choices immediately update the soulmap vector in the database
+- **Debug Logging:** Comprehensive logging tracks soulmap integration process
+
+### Tests
+- See `backend/tests/test_soulmap.py` for vector math and API endpoint tests
+
+### Dev Notes
+- Ensure Postgres is running and accessible at the connection string in `backend/alembic.ini`
+- If you change the vector size, update both backend and frontend accordingly
+- **Sprint Status:** ✅ **COMPLETED** - Player choice data capture and real-time soulmap updates are fully functional
+
+---
+
+## Narrative Media Layer v1 (MEDIA01)
+
+### Backend
+- **Package:** `backend/media/` - Media generation and S3 management
+- **Generator:** `backend/media/generator.py` - OpenAI Image API + Suno audio generation
+- **S3 Utils:** `backend/utils/s3.py` - Asset upload/download with minio support
+- **Codex Router:** `purpose_agents/codex_router.py` - Media task enqueuing and processing
+- **API Endpoints:**
+  - `GET /media/status/{task_id}` → returns task status
+  - `GET /media/result/{task_id}` → returns generated media URLs
+- **Scene Integration:** All scene responses now include `media` field with `images[]` and `audio[]` arrays
+
+### Frontend
+- **SceneView Updates:**
+  - Lazy-loads first scene image with loading states
+  - Audio playback controls with play/pause functionality
+  - Graceful fallback when media fails to load
+- **Media Handling:**
+  - Images: Automatic loading with error handling
+  - Audio: HTML5 Audio API with loop support
+  - Responsive design for different screen sizes
+
+### Configuration
+- **Environment Variables:**
+  - `USE_CPU_STUBS=true` - Bypass real APIs for development
+  - `S3_BUCKET_NAME` - S3 bucket for media storage
+  - `S3_ENDPOINT_URL` - Minio endpoint for local development
+  - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` - S3 credentials
+
+### Constraints
+- **File Size Limits:** Images ≤5MB JPG, Audio ≤10MB MP3
+- **Graceful Degradation:** Scenes render text-only if media generation fails
+- **Async Processing:** Media generation happens in background via Codex router
+
+### Tests
+- **Backend:** `backend/tests/test_media.py` - Generator, router, and integration tests
+- **Frontend:** `frontend/src/scenes/__tests__/SceneView.test.tsx` - Media UI tests
+- **Coverage:** Media generation, S3 uploads, error handling, and UI interactions
+
+### Dev Notes
+- Media generation is queued automatically when scenes are created/advanced
+- Use `USE_CPU_STUBS=true` for development without API costs
+- S3/minio integration supports both local development and production
+
+---
+
+> *"You do not merely design your hero — you remember them."*

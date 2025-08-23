@@ -1,0 +1,12 @@
+{
+  "frank": {
+    "playerName": "Frank",
+    "archetype": "monk",
+    "soulSeedId": "76732d528988"
+  },
+  "aim": {
+    "playerName": "aim",
+    "archetype": "hero",
+    "soulSeedId": "721e3ae27fc9"
+  }
+}
