@@ -25,106 +25,94 @@ const SOUL_TRAIT_CATEGORIES = {
   'Social Traits': ['OPTIMISM', 'VIGILANCE', 'SOCIALDOMINANCE', 'HUMILITY']
 };
 
-// Convert vector to traits dictionary (unused but kept for potential future use)
-// const vectorToTraits = (vector: number[]): Record<string, number> => {
-//   const traits: Record<string, number> = {};
-//   Object.values(SOUL_TRAIT_CATEGORIES).flat().forEach((trait, index) => {
-//     if (index < vector.length) {
-//       traits[trait] = vector[index];
-//     }
-//   });
-//   return traits;
-// };
-
 const SoulMapWidget: React.FC<SoulMapWidgetProps> = ({ playerId, refreshKey }: SoulMapWidgetProps) => {
   const [soulMapData, setSoulMapData] = useState<SoulMapData | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Core Virtues');
   const [viewMode, setViewMode] = useState<'radar' | 'summary'>('radar');
 
-  console.log('SoulMapWidget playerId:', playerId);
-
   useEffect(() => {
-    console.log('SoulMapWidget useEffect, playerId:', playerId, 'refreshKey:', refreshKey);
-    if (!playerId) {
-      setError('No playerId');
-      return;
-    }
-    // Use the working test endpoint
+    if (!playerId) return;
+    setLoading(true);
+    setError(null);
+
     fetch(`/v1/soulmap/player/${playerId}`)
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to fetch soul map');
         return res.json();
       })
-      .then(data => {
-        console.log('SoulMapWidget received data:', data);
-        // The backend returns traits directly, not a vector
-        setSoulMapData({
-          player_id: data.player_id,
-          traits: data.traits || {},
-          vector_size: data.vector_size || 64
-        });
-        setError(null);
+      .then((data) => {
+        setSoulMapData(data);
       })
       .catch((err) => {
-        console.error('SoulMapWidget fetch error:', err);
-        setError(`Could not load soul map: ${err.message}`);
+        setError(err.message);
+      })
+      .finally(() => {
+        setLoading(false);
       });
-  }, [playerId, refreshKey]); // Add refreshKey to dependencies
+  }, [playerId, refreshKey]);
 
-  // Prepare radar chart data for selected category
   const getRadarData = () => {
     if (!soulMapData?.traits) return [];
-    
-    const categoryTraits = SOUL_TRAIT_CATEGORIES[selectedCategory as keyof typeof SOUL_TRAIT_CATEGORIES] || [];
-    return categoryTraits.map(trait => ({
-      trait: trait.replace(/_/g, ' '),
+
+    // Select key traits for visualization (core virtues + archetypes)
+    const keyTraits = [
+      'COURAGE', 'COMPASSION', 'WISDOM', 'CREATIVITY',
+      'HERO', 'SAGE', 'MAGICIAN', 'EXPLORER'
+    ];
+
+    return keyTraits.map(trait => ({
+      trait: trait.toLowerCase(),
       value: soulMapData.traits[trait] || 0
     }));
   };
 
-  // Get top traits for summary view
-  const getTopTraits = (count: number = 8) => {
+  const getTopTraits = () => {
     if (!soulMapData?.traits) return [];
-    
+
     return Object.entries(soulMapData.traits)
-      .sort(([,a], [,b]) => Math.abs(b) - Math.abs(a))
-      .slice(0, count)
-      .map(([trait, value]) => ({
-        trait: trait.replace(/_/g, ' '),
-        value,
-        category: Object.entries(SOUL_TRAIT_CATEGORIES).find(([, traits]) => 
-          traits.includes(trait)
-        )?.[0] || 'Other'
-      }));
+      .map(([trait, value]) => ({ trait, value }))
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+      .slice(0, 8);
   };
 
-  // Get category summary
   const getCategorySummary = () => {
     if (!soulMapData?.traits) return [];
-    
+
     return Object.entries(SOUL_TRAIT_CATEGORIES).map(([category, traits]) => {
       const values = traits.map(trait => soulMapData.traits[trait] || 0);
-      const avgValue = values.reduce((sum, val) => sum + val, 0) / values.length;
-      const maxValue = Math.max(...values.map(Math.abs));
-      
+      const average = values.reduce((sum, val) => sum + val, 0) / values.length;
+
       return {
         category,
-        average: avgValue,
-        max: maxValue,
-        dominant: traits[values.indexOf(Math.max(...values))] || traits[0]
+        average,
+        traits: traits.length
       };
     });
   };
+
+  if (!playerId) {
+    return <div style={{ padding: 16, color: '#666' }}>No player selected</div>;
+  }
+
+  if (loading) {
+    return <div style={{ padding: 16, color: '#666' }}>Loading soul map...</div>;
+  }
+
+  if (error) {
+    return <div style={{ padding: 16, color: '#f44336' }}>Error: {error}</div>;
+  }
+
+  if (!soulMapData) {
+    return <div style={{ padding: 16, color: '#666' }}>No soul map data available</div>;
+  }
 
   const radarData = getRadarData();
   const topTraits = getTopTraits();
   const categorySummary = getCategorySummary();
 
   return (
-    <div style={{ width: '100%', maxWidth: 400, height: 500 }}>
+    <div data-testid="soul-map-widget" style={{ width: '100%', maxWidth: 400, height: 500 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Soul Map</h3>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -159,110 +147,70 @@ const SoulMapWidget: React.FC<SoulMapWidgetProps> = ({ playerId, refreshKey }: S
         </div>
       </div>
 
-      {error && <div style={{ color: 'red', marginBottom: 16 }}>{error}</div>}
-      
-      {!error && soulMapData && (
+      {viewMode === 'radar' && (
         <>
-          {viewMode === 'radar' && (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
+          <div style={{ width: '100%', height: 220 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} outerRadius={80}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="trait" />
+                <PolarRadiusAxis domain={[-1, 1]} tickCount={5} />
+                <Radar name="Soul" dataKey="value" stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} />
+                <Tooltip formatter={(v: number) => v.toFixed(2)} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem' }}>Strongest Traits</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {topTraits.map((trait) => (
+                <div
+                  key={trait.trait}
                   style={{
-                    width: '100%',
-                    padding: '8px',
-                    borderRadius: 4,
-                    border: '1px solid #ccc',
-                    fontSize: '0.9rem'
+                    padding: 8,
+                    border: '1px solid #eee',
+                    borderRadius: 6,
+                    backgroundColor: '#fafafa'
                   }}
                 >
-                  {Object.keys(SOUL_TRAIT_CATEGORIES).map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div style={{ height: 300 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
-                    <PolarGrid />
-                    <PolarAngleAxis 
-                      dataKey="trait" 
-                      tick={{ fontSize: 10 }}
-                      tickLine={false}
-                    />
-                    <PolarRadiusAxis 
-                      angle={30} 
-                      domain={[-1, 1]} 
-                      tickCount={5}
-                      tick={{ fontSize: 10 }}
-                    />
-                    <Radar 
-                      name="Soul" 
-                      dataKey="value" 
-                      stroke="#8884d8" 
-                      fill="#8884d8" 
-                      fillOpacity={0.6} 
-                    />
-                    <Tooltip 
-                      formatter={(value: number) => value.toFixed(2)}
-                      labelFormatter={(label: string) => label}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-
-          {viewMode === 'summary' && (
-            <div style={{ height: 400, overflowY: 'auto' }}>
-              <div style={{ marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem' }}>Top Traits</h4>
-                {topTraits.map((trait, index) => (
-                  <div key={trait.trait} style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    padding: '4px 0',
-                    borderBottom: index < topTraits.length - 1 ? '1px solid #eee' : 'none'
-                  }}>
-                    <span style={{ fontSize: '0.9rem' }}>{trait.trait}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ 
-                        fontSize: '0.8rem', 
-                        color: '#666',
-                        backgroundColor: '#f0f0f0',
-                        padding: '2px 6px',
-                        borderRadius: 8
-                      }}>
-                        {trait.category}
-                      </span>
-                      <span style={{ 
-                        fontSize: '0.9rem',
-                        fontWeight: 'bold',
-                        color: trait.value > 0 ? '#4caf50' : trait.value < 0 ? '#f44336' : '#666'
-                      }}>
-                        {trait.value > 0 ? '+' : ''}{trait.value.toFixed(2)}
-                      </span>
-                    </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>{trait.trait.replace(/_/g, ' ')}</span>
+                    <span style={{
+                      fontSize: '0.8rem',
+                      fontWeight: 'bold',
+                      color: trait.value > 0 ? '#4caf50' : trait.value < 0 ? '#f44336' : '#666'
+                    }}>
+                      {trait.value > 0 ? '+' : ''}{trait.value.toFixed(2)}
+                    </span>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
+      {viewMode === 'summary' && (
+        <>
+          {soulMapData.traits && (
+            <div style={{ display: 'grid', gap: 16 }}>
               <div>
                 <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem' }}>Category Overview</h4>
                 {categorySummary.map((category) => (
-                  <div key={category.category} style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    padding: '6px 0',
-                    borderBottom: '1px solid #eee'
-                  }}>
+                  <div
+                    key={category.category}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '6px 0',
+                      borderBottom: '1px solid #eee'
+                    }}
+                  >
                     <span style={{ fontSize: '0.9rem' }}>{category.category}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ 
+                      <span style={{
                         fontSize: '0.8rem',
                         color: category.average > 0 ? '#4caf50' : category.average < 0 ? '#f44336' : '#666'
                       }}>
